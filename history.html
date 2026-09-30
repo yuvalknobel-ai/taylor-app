@@ -269,6 +269,8 @@
                   <option value="offer"        :selected="app.app_status === 'offer'">Offer</option>
                   <option value="rejected"     :selected="app.app_status === 'rejected'">Rejected</option>
                 </select>
+                <span class="stale-badge" x-show="isStale(app)" x-cloak
+                      :title="`No update in ${staleDays(app)} days`">🕸 <span x-text="staleDays(app)"></span>d quiet</span>
               </div>
             </td>
             <td class="reason-col" x-data="{ isOther: !!app.rejection_reason && !REJECT_REASONS.includes(app.rejection_reason) }">
@@ -776,6 +778,7 @@ function historyPage() {
 
     async updateStatus(app, status) {
       const wasInterviewing = app.app_status === 'interviewing';
+      const wasOffer = app.app_status === 'offer';
       app.app_status = status;
       await fetch(`/api/applications/${app.id}/status`, {
         method: 'PATCH',
@@ -787,6 +790,11 @@ function historyPage() {
           href: 'interviewing.html',
           linkText: 'View there →',
         });
+        if (window.launchConfetti) window.launchConfetti();
+      }
+      if (status === 'offer' && !wasOffer) {
+        this.showToast(`🎉 ${app.company_name || 'This application'} got an Offer!`);
+        if (window.launchConfetti) window.launchConfetti();
       }
     },
 
@@ -956,6 +964,18 @@ function historyPage() {
     formatDate(iso) {
       if (!iso) return '—';
       return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    },
+
+    // Days since an application was sent, with no further movement. Only
+    // meaningful for "sent" — once it's interviewing/offer/rejected the
+    // waiting is over.
+    staleDays(app) {
+      if (!app.created_at) return 0;
+      const ms = Date.now() - new Date(app.created_at).getTime();
+      return Math.floor(ms / 86400000);
+    },
+    isStale(app) {
+      return app.app_status === 'sent' && this.staleDays(app) >= 10;
     },
 
     toDateInput(iso) {

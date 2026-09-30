@@ -142,19 +142,27 @@
           <h1>Active Processes <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#7dc4a0;vertical-align:middle;margin-left:4px;margin-bottom:2px"></span></h1>
           <p class="subtitle">Track every step of your live interviews — notes, dates, impressions.</p>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;padding-top:6px">
+        <div style="display:flex;align-items:center;gap:8px;padding-top:6px;flex-wrap:wrap">
           <button class="btn btn-sm btn-primary" @click="addProcess()" :disabled="_adding" style="white-space:nowrap">
             <span x-show="!_adding">+ Add a process</span>
             <span x-show="_adding" x-cloak>Adding...</span>
           </button>
-          <label style="font-size:13px;color:var(--muted);white-space:nowrap">Sort by</label>
-          <select class="process-detail-input" style="width:auto;font-size:13px;padding:6px 10px" x-model="sortBy">
-            <option value="manual">My order</option>
-            <option value="next_step">Next interview date</option>
-            <option value="company">Company name</option>
-            <option value="stage">Interview stage</option>
-            <option value="added">Date added</option>
-          </select>
+          <div class="view-toggle">
+            <button class="view-toggle-btn" :class="{ active: viewMode === 'list' }" @click="viewMode = 'list'">☰ List</button>
+            <button class="view-toggle-btn" :class="{ active: viewMode === 'board' }" @click="viewMode = 'board'">▦ Board</button>
+          </div>
+          <template x-if="viewMode === 'list'">
+            <span style="display:flex;align-items:center;gap:8px">
+              <label style="font-size:13px;color:var(--muted);white-space:nowrap">Sort by</label>
+              <select class="process-detail-input" style="width:auto;font-size:13px;padding:6px 10px" x-model="sortBy">
+                <option value="manual">My order</option>
+                <option value="next_step">Next interview date</option>
+                <option value="company">Company name</option>
+                <option value="stage">Interview stage</option>
+                <option value="added">Date added</option>
+              </select>
+            </span>
+          </template>
         </div>
       </div>
 
@@ -171,10 +179,35 @@
         </button>
       </div>
 
+      <!-- Board view — columns by interview stage, drag cards between them.
+           Dropping into "Offer" also flips the application's status and
+           triggers the confetti celebration. -->
+      <div class="board-view" x-show="!loading && applications.length > 0 && viewMode === 'board'" x-cloak>
+        <template x-for="col in boardColumns()" :key="col.key">
+          <div class="board-col" @dragover.prevent @drop="onBoardDrop(col.key)">
+            <div class="board-col-header">
+              <span x-text="col.label"></span>
+              <span class="board-col-count" x-text="col.apps.length"></span>
+            </div>
+            <div class="board-col-body">
+              <template x-for="app in col.apps" :key="app.id">
+                <div class="board-card" draggable="true"
+                     @dragstart="_dragApp = app"
+                     @click="viewMode = 'list'; $nextTick(() => document.getElementById('card-' + app.id)?.scrollIntoView({behavior:'smooth', block:'center'}))">
+                  <div class="board-card-company" x-text="app.company_name || 'Unknown company'"></div>
+                  <div class="board-card-role" x-show="app.job_title" x-text="app.job_title"></div>
+                </div>
+              </template>
+              <div class="board-col-empty" x-show="col.apps.length === 0">Drop here</div>
+            </div>
+          </div>
+        </template>
+      </div>
+
       <!-- One card per active process -->
-      <div class="process-list" x-show="!loading" x-cloak x-ref="processList">
+      <div class="process-list" x-show="!loading && viewMode === 'list'" x-cloak x-ref="processList">
         <template x-for="app in sortedApplications" :key="app.id">
-          <div class="process-card" :class="{ 'card-locked': !app._editing }" :data-id="app.id">
+          <div class="process-card" :id="'card-' + app.id" :class="{ 'card-locked': !app._editing }" :data-id="app.id">
 
             <!-- Card header -->
             <div class="process-header">
@@ -208,7 +241,7 @@
                   <span x-show="app._editing" x-cloak>✓ Done</span>
                 </button>
                 <select class="stage-select" :class="'status-sel-' + app.app_status"
-                        x-model="app.app_status" @change="updateStatus(app)">
+                        :value="app.app_status" @change="updateStatus(app, $event.target.value)">
                   <option value="sent">Sent</option>
                   <option value="interviewing">Interviewing</option>
                   <option value="offer">Offer</option>
@@ -585,6 +618,8 @@ function interviewingPage() {
     archiveLoading: false,
     outcomes: OUTCOMES,
     sortBy: localStorage.getItem('interviewSortBy') || 'manual',
+    viewMode: localStorage.getItem('interviewViewMode') || 'list',
+    _dragApp: null,
 
     get sortedApplications() {
       const today = new Date().toISOString().slice(0, 10);
@@ -620,6 +655,7 @@ function interviewingPage() {
 
     async init() {
       this.$watch('sortBy', v => localStorage.setItem('interviewSortBy', v));
+      this.$watch('viewMode', v => localStorage.setItem('interviewViewMode', v));
       const res = await fetch('/api/interviewing');
       const data = await res.json();
       // Assign a 1-based appearance order from the saved order returned by the API
@@ -753,6 +789,57 @@ function interviewingPage() {
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     },
 
+    // ── Board view — 4 columns grouping the finer-grained interview_stage
+    // values (CV Sent, Phone Screen, 1st/2nd/3rd Interview, Final Round,
+    // Offer) into a simple Applied -> Screening -> Interviews -> Offer flow.
+    // Dragging a card between columns writes back a representative stage
+    // for the new column (unless the card is just reordered within the
+    // same column's stage group, in which case its finer stage is kept).
+    stageGroupKey(stage) {
+      if (!stage) return 'applied';
+      if (['CV Sent', 'Phone Screen'].includes(stage)) return 'screen';
+      if (['1st Interview', '2nd Interview', '3rd Interview', 'Final Round'].includes(stage)) return 'interview';
+      if (stage === 'Offer') return 'offer';
+      return 'applied';
+    },
+    boardColumns() {
+      const groups = { applied: [], screen: [], interview: [], offer: [] };
+      for (const app of this.applications) {
+        groups[this.stageGroupKey(app.interview_stage)].push(app);
+      }
+      return [
+        { key: 'applied',   label: 'Applied',    apps: groups.applied },
+        { key: 'screen',    label: 'Screening',  apps: groups.screen },
+        { key: 'interview', label: 'Interviews', apps: groups.interview },
+        { key: 'offer',     label: 'Offer',      apps: groups.offer },
+      ];
+    },
+    async onBoardDrop(colKey) {
+      const app = this._dragApp;
+      this._dragApp = null;
+      if (!app || this.stageGroupKey(app.interview_stage) === colKey) return;
+
+      const stageForColumn = { applied: null, screen: 'CV Sent', interview: '1st Interview', offer: 'Offer' };
+      app.interview_stage = stageForColumn[colKey];
+
+      await fetch(`/api/applications/${app.id}/details`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interview_stage: app.interview_stage }),
+      });
+
+      if (colKey === 'offer') {
+        const wasOffer = app.app_status === 'offer';
+        app.app_status = 'offer';
+        await fetch(`/api/applications/${app.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'offer' }),
+        });
+        if (!wasOffer && window.launchConfetti) window.launchConfetti();
+      }
+    },
+
     jdItems(s) {
       if (!s) return [];
       const officeLabel = s.remote_policy === 'hybrid' && s.office_days
@@ -768,12 +855,15 @@ function interviewingPage() {
       ].filter(i => i.value && i.value !== 'null' && i.value !== 'not mentioned');
     },
 
-    async updateStatus(app) {
+    async updateStatus(app, status) {
+      const wasOffer = app.app_status === 'offer';
+      app.app_status = status;
       await fetch(`/api/applications/${app.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: app.app_status }),
+        body: JSON.stringify({ status }),
       });
+      if (status === 'offer' && !wasOffer && window.launchConfetti) window.launchConfetti();
     },
 
     async saveDetails(app) {
