@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taylor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&family=Heebo:wght@300;400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link rel="stylesheet" href="style.css?v=71">
+<script src="localdb.js"></script>
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">Taylor<span class="brand-tagline" id="brandTagline">Yuvi's personal application tracker</span></span>
+  <div class="topnav-links">
+    <a href="index.html">Home</a>
+    <a href="index.html" class="gen-only">New Application</a>
+<a href="history.html">Applications</a>
+    <a href="interviewing.html">Interviewing</a>
+        <a href="stats.html" class="active">Stats</a>
+  </div>
+  <div class="topnav-right">
+    <div class="token-counter" id="tokenCounter" title="API cost this session">⚡ <span id="tcCalls">0</span> calls · <span class="tc-cost" id="tcCost">$0.000</span></div>
+    <div class="built-badge"><span class="badge-dot"></span><a href="https://www.linkedin.com/in/yuval-knobel-248ba2174" target="_blank" rel="noopener" class="built-badge-link"><strong>Yuval Knobel AI Ltd</strong></a></div>
+    <button class="tour-btn" onclick="startTour()">▶ Tour</button>
+  </div>
+</nav>
+<script>fetch("/api/config").then(r=>r.json()).then(c=>{if(!c.is_demo)return;document.querySelectorAll("*").forEach(el=>{el.childNodes.forEach(n=>{if(n.nodeType===3)n.textContent=n.textContent.replace(/Yuvi/g,c.display_name);});});});</script>
+
+<div class="layout" x-data="sidebarData()" x-init="init()">
+
+  <!-- Sidebar (same as all pages) -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Applications</span>
+      <span class="sidebar-count" x-text="totalApps()"></span>
+    </div>
+    <div class="sidebar-loading" x-show="loading">Loading...</div>
+    <a href="history.html" class="sidebar-all">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1.5H2zm0 3h12v1.5H2zm0 3h8v1.5H2z"/></svg>
+      All Applications
+    </a>
+    <div x-show="!loading" x-cloak>
+      <template x-for="cat in categories" :key="cat.id">
+        <div class="cat-group">
+          <div class="cat-header" @click="toggle(cat.id)">
+            <div class="cat-header-left">
+              <span class="cat-chevron" :class="expanded[cat.id] ? 'open' : ''">›</span>
+              <span class="cat-dot" :style="`background:${cat.color}`"></span>
+              <span class="cat-name" x-text="cat.name"></span>
+            </div>
+            <div class="cat-header-right">
+              <span class="cat-count" x-text="cat.applications.length"></span>
+              <button class="cat-delete" @click="deleteCategory(cat.id, $event)" title="Delete">×</button>
+            </div>
+          </div>
+          <div class="cat-apps" x-show="expanded[cat.id]" x-cloak>
+            <template x-if="cat.applications.length === 0">
+              <div class="cat-empty">Nothing here yet</div>
+            </template>
+            <template x-for="app in cat.applications" :key="app.id">
+              <div class="app-item">
+                <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                <div class="app-info">
+                  <span class="app-company" x-text="app.company_name || 'Unknown'"></span>
+                  <span class="app-role" x-text="app.job_title || ''"></span>
+                </div>
+                <a x-show="appUrl(app)" :href="appUrl(app)" class="app-dl" download>↓</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <div class="add-cat-row">
+        <div x-show="!showNewCat">
+          <button class="btn-add-cat" @click="showNewCat=true">+ Add a label</button>
+        </div>
+        <div x-show="showNewCat" x-cloak class="new-cat-form">
+          <input class="new-cat-input" x-model="newCatName" placeholder="Label name"
+                 @keydown.enter="addCategory()" @keydown.escape="showNewCat=false">
+          <button class="btn btn-sm btn-primary" @click="addCategory()">Add</button>
+          <button class="btn btn-sm btn-ghost" @click="showNewCat=false">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main x-data="statsPage()" x-init="init()" class="main-content">
+    <div class="main-inner">
+
+      <div class="page-header">
+        <h1>Your Search in Numbers</h1>
+        <p class="subtitle">How the hunt is going, <span class="user-name">there</span>.</p>
+      </div>
+
+      <!-- AI usage highlight bar -->
+      <div class="ai-usage-bar" x-show="usage">
+        <div class="ai-usage-item">
+          <span class="ai-usage-icon">🤖</span>
+          <span class="ai-usage-label">AI calls this session</span>
+          <span class="ai-usage-value" x-text="usage ? usage.calls : 0"></span>
+        </div>
+        <div class="ai-usage-divider"></div>
+        <div class="ai-usage-item">
+          <span class="ai-usage-icon">⚡</span>
+          <span class="ai-usage-label">Tokens used</span>
+          <span class="ai-usage-value" x-text="usage ? (usage.input_tokens + usage.output_tokens).toLocaleString() : 0"></span>
+        </div>
+        <div class="ai-usage-divider"></div>
+        <div class="ai-usage-item">
+          <span class="ai-usage-icon">💰</span>
+          <span class="ai-usage-label">API cost this session</span>
+          <span class="ai-usage-value ai-usage-cost" x-text="usage ? usage.cost_display : '$0.000'"></span>
+        </div>
+        <div class="ai-usage-divider"></div>
+        <div class="ai-usage-item">
+          <span class="ai-usage-icon">📄</span>
+          <span class="ai-usage-label">CVs tailored</span>
+          <span class="ai-usage-value" x-text="s ? s.total : 0"></span>
+        </div>
+      </div>
+
+      <div class="loading-box" x-show="loading" x-cloak>
+        <div class="spinner"></div><p>Crunching the numbers...</p>
+      </div>
+
+      <div x-show="!loading" x-cloak>
+
+        <!-- Funnel row -->
+        <div class="stats-funnel">
+          <div class="funnel-step">
+            <div class="funnel-number" x-text="s.total || 0"></div>
+            <div class="funnel-label">Applications</div>
+          </div>
+          <div class="funnel-arrow">→</div>
+          <div class="funnel-step">
+            <div class="funnel-number" x-text="s.sent || 0"></div>
+            <div class="funnel-label">Sent</div>
+          </div>
+          <div class="funnel-arrow">→</div>
+          <div class="funnel-step">
+            <div class="funnel-number" style="color:#7dc4a0" x-text="s.interviewing || 0"></div>
+            <div class="funnel-label">Interviewing</div>
+            <div class="funnel-rate" x-show="s.response_rate > 0" x-text="`${s.response_rate}% response`"></div>
+          </div>
+          <div class="funnel-arrow">→</div>
+          <div class="funnel-step">
+            <div class="funnel-number" style="color:#b09de8" x-text="s.offers || 0"></div>
+            <div class="funnel-label">Offers</div>
+            <div class="funnel-rate" x-show="s.offer_rate > 0" x-text="`${s.offer_rate}% conversion`"></div>
+          </div>
+        </div>
+
+        <!-- Insights — plain-English observations about the user's data -->
+        <div class="stats-section insights-section" x-show="s.insights && s.insights.length > 0" x-cloak>
+          <h3 class="stats-section-title">✨ Insights</h3>
+          <div class="insights-list">
+            <template x-for="ins in s.insights" :key="ins.text">
+              <div class="insight-item">
+                <span class="insight-icon" x-text="ins.icon"></span>
+                <span class="insight-text" x-text="ins.text"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Referral impact — only shown when there's enough data to make a
+             meaningful comparison (avoids 0% next to 0% for brand-new users). -->
+        <div class="stats-section" x-show="(s.sent || 0) >= 5 && (s.referred || 0) >= 1" x-cloak>
+          <h3 class="stats-section-title">Referral impact</h3>
+          <div class="referral-compare">
+            <div class="referral-compare-cell">
+              <div class="referral-compare-label">🤝 With referral</div>
+              <div class="referral-compare-value" x-text="`${s.referred_response_rate || 0}%`"></div>
+              <div class="referral-compare-sub" x-text="`${s.referred_interviewing || 0} of ${s.referred || 0} got a reply`"></div>
+            </div>
+            <div class="referral-compare-cell">
+              <div class="referral-compare-label">📤 Cold</div>
+              <div class="referral-compare-value" x-text="`${s.cold_response_rate || 0}%`"></div>
+              <div class="referral-compare-sub">applications without a referral</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI cards -->
+        <div class="stats-kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon">🎯</div>
+            <div class="kpi-value" x-text="`${s.response_rate || 0}%`"></div>
+            <div class="kpi-label">Response rate</div>
+            <div class="kpi-sub">of sent → interview</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">❌</div>
+            <div class="kpi-value" x-text="`${s.rejection_rate || 0}%`"></div>
+            <div class="kpi-label">Rejection rate</div>
+            <div class="kpi-sub">of sent → rejected</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🤝</div>
+            <div class="kpi-value" x-text="s.referred || 0"></div>
+            <div class="kpi-label">Via referral</div>
+            <div class="kpi-sub" x-text="s.referred ? `${s.referred_interviewing} got interviews` : 'none yet'"></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">📋</div>
+            <div class="kpi-value" x-text="statusCount('generated')"></div>
+            <div class="kpi-label">Pending submission</div>
+            <div class="kpi-sub">CV ready, not sent yet</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">⏳</div>
+            <div class="kpi-value" x-text="statusCount('sent')"></div>
+            <div class="kpi-label">Pending response</div>
+            <div class="kpi-sub">sent, waiting to hear back</div>
+          </div>
+        </div>
+
+        <!-- Status breakdown -->
+        <div class="stats-section">
+          <h3 class="stats-section-title">By status</h3>
+          <div class="status-breakdown">
+            <template x-for="item in statusBreakdown()" :key="item.label">
+              <div class="breakdown-row">
+                <div class="breakdown-left">
+                  <span class="sdot" :style="`background:${item.color}`"></span>
+                  <span class="breakdown-label" x-text="item.label"></span>
+                </div>
+                <div class="breakdown-bar-wrap">
+                  <div class="breakdown-bar" :style="`width:${item.pct}%; background:${item.color}40`">
+                    <div class="breakdown-bar-fill" :style="`width:${item.pct}%; background:${item.color}`"></div>
+                  </div>
+                </div>
+                <span class="breakdown-count" x-text="item.count"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Why applications didn't move forward -->
+        <div class="stats-section" x-show="s.by_rejection_reason && Object.keys(s.by_rejection_reason).length > 0">
+          <h3 class="stats-section-title">Why applications didn't move forward</h3>
+          <div class="status-breakdown">
+            <template x-for="item in rejectionBreakdown()" :key="item.label">
+              <div class="breakdown-row">
+                <div class="breakdown-left">
+                  <span class="sdot" style="background:#f59ab0"></span>
+                  <span class="breakdown-label" x-text="item.label"></span>
+                </div>
+                <div class="breakdown-bar-wrap">
+                  <div class="breakdown-bar" :style="`width:${item.pct}%; background:#f59ab040`">
+                    <div class="breakdown-bar-fill" :style="`width:${item.pct}%; background:#f59ab0`"></div>
+                  </div>
+                </div>
+                <span class="breakdown-count" x-text="item.count"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Stage funnel -->
+        <div class="stats-section" x-show="s.by_stage && Object.keys(s.by_stage).length > 0">
+          <h3 class="stats-section-title">Interview stage pipeline</h3>
+          <div class="stage-pipeline">
+            <template x-for="(stage, idx) in stageFunnel()" :key="stage.name">
+              <div class="stage-funnel-row">
+                <div class="stage-funnel-bar-wrap">
+                  <div class="stage-funnel-bar"
+                       :style="`width:${stage.pct}%; background:${stage.color}; opacity:${0.4 + stage.pct/160}`">
+                  </div>
+                </div>
+                <div class="stage-funnel-label">
+                  <span class="stage-funnel-name" x-text="stage.name"></span>
+                  <span class="stage-funnel-count" x-text="stage.count"></span>
+                  <span class="stage-funnel-rate" x-show="stage.rate !== null"
+                        x-text="stage.rate + '% made it here'"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Category breakdown -->
+        <div class="stats-section" x-show="s.by_category && s.by_category.filter(c=>c.total>0).length > 0">
+          <h3 class="stats-section-title">By label</h3>
+          <div class="category-breakdown">
+            <template x-for="cat in (s.by_category || []).filter(c => c.total > 0)" :key="cat.name">
+              <div>
+                <div class="cat-stat-row cat-stat-clickable" @click="toggleCat(cat.id)">
+                  <div class="cat-stat-left">
+                    <span class="cat-chevron-sm" :class="expandedCat === cat.id ? 'open' : ''">›</span>
+                    <span class="cat-dot-sm" :style="`background:${cat.color}`"></span>
+                    <span class="cat-stat-name" x-text="cat.name"></span>
+                  </div>
+                  <div class="cat-stat-pills">
+                    <span class="cat-stat-total" x-text="`${cat.total} sent`"></span>
+                    <span class="cat-stat-badge green" x-show="cat.interviewing > 0"
+                          x-text="`${cat.interviewing} interview${cat.interviewing > 1 ? 's' : ''}`"></span>
+                    <span class="cat-stat-badge purple" x-show="cat.offer > 0"
+                          x-text="`${cat.offer} offer${cat.offer > 1 ? 's' : ''}`"></span>
+                  </div>
+                </div>
+                <div class="cat-app-list" x-show="expandedCat === cat.id" x-cloak>
+                  <template x-for="app in appsForCat(cat.id)" :key="app.id">
+                    <div class="cat-app-item">
+                      <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                      <div class="cat-app-info">
+                        <span class="cat-app-company" x-text="app.company_name || 'Unknown'"></span>
+                        <span class="cat-app-role" x-text="app.job_title || ''"></span>
+                      </div>
+                      <span class="cat-app-status" x-text="app.app_status"></span>
+                    </div>
+                  </template>
+                  <div class="cat-app-empty" x-show="appsForCat(cat.id).length === 0">No sent applications in this label yet.</div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Monthly volume -->
+        <div class="stats-section" x-show="s.monthly && s.monthly.length > 1">
+          <h3 class="stats-section-title">Monthly volume</h3>
+          <div class="monthly-chart">
+            <template x-for="m in (s.monthly || [])" :key="m.month">
+              <div class="month-bar-wrap">
+                <div class="month-bar-col">
+                  <div class="month-count" x-text="m.count"></div>
+                  <div class="month-bar" :style="`height:${barHeight(m.count)}px`"></div>
+                </div>
+                <div class="month-label" x-text="formatMonth(m.month)"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Empty state -->
+        <div class="empty-state" x-show="s.total === 0">
+          <p>Stats will fill in as you log applications and outcomes.</p>
+          <button type="button" class="btn btn-primary" @click="openAddAppModal()" style="margin-top:12px">+ Track a new application</button>
+          <a href="index.html" class="btn btn-primary gen-only">New application</a>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="sidebar.js?v=2"></script>
+<script>
+const STATUS_META = {
+  generated:    { label: 'Generated',    color: '#f5d47a' },
+  sent:         { label: 'Sent',         color: '#f5a86a' },
+  rejected:     { label: 'Rejected',     color: '#f59ab0' },
+  interviewing: { label: 'Interviewing', color: '#7dc4a0' },
+  offer:        { label: 'Offer',        color: '#b09de8' },
+};
+
+function statsPage() {
+  return {
+    s: {},
+    usage: null,
+    loading: true,
+    apps: [],
+    expandedCat: null,
+
+    async init() {
+      await this.loadStats();
+      this.loadApps();
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') { this.loadStats(); this.loadApps(); }
+      });
+    },
+
+    async loadStats() {
+      const bust = `?t=${Date.now()}`;
+      const [res, uRes] = await Promise.all([fetch('/api/stats' + bust), fetch('/api/usage' + bust)]);
+      this.s = await res.json();
+      this.usage = await uRes.json();
+      this.loading = false;
+    },
+
+    async loadApps() {
+      try { this.apps = await (await fetch('/api/history')).json(); } catch (e) { this.apps = []; }
+    },
+    toggleCat(catId) { this.expandedCat = this.expandedCat === catId ? null : catId; },
+    appsForCat(catId) {
+      return this.apps.filter(a => (a.category_ids || []).includes(catId) && a.app_status !== 'generated');
+    },
+
+    statusCount(key) {
+      return (this.s.by_status || {})[key] || 0;
+    },
+
+    statusBreakdown() {
+      const bs = this.s.by_status || {};
+      const total = this.s.total || 1;
+      return Object.entries(STATUS_META).map(([key, meta]) => ({
+        label: meta.label,
+        color: meta.color,
+        count: bs[key] || 0,
+        pct: Math.round((bs[key] || 0) / total * 100),
+      })).filter(i => i.count > 0);
+    },
+
+    rejectionBreakdown() {
+      const br = this.s.by_rejection_reason || {};
+      const total = Object.values(br).reduce((a, b) => a + b, 0) || 1;
+      return Object.entries(br)
+        .map(([label, count]) => ({ label, count, pct: Math.round(count / total * 100) }))
+        .sort((a, b) => b.count - a.count);
+    },
+
+    stageFunnel() {
+      const bs = this.s.by_stage || {};
+      const order = this.s.stage_order || [];
+      const colors = {
+        'CV Sent':       '#c8cdd6',
+        'Phone Screen':  '#f5d47a',
+        '1st Interview': '#f5a86a',
+        '2nd Interview': '#7dc4a0',
+        '3rd Interview': '#5bb89a',
+        'Final Round':   '#b09de8',
+        'Offer':         '#a8d8c0',
+      };
+      const total = bs['CV Sent'] || Object.values(bs).reduce((a,b) => a+b, 0) || 1;
+      const active = order.filter(s => (bs[s] || 0) > 0);
+      return active.map((name, i) => {
+        const count = bs[name] || 0;
+        const prev = i > 0 ? (bs[active[i-1]] || 0) : null;
+        return {
+          name,
+          count,
+          color: colors[name] || '#c8cdd6',
+          pct: Math.round(count / total * 100),
+          rate: prev ? Math.round(count / prev * 100) : null,
+        };
+      });
+    },
+
+    stageDotColor(stage) {
+      const map = {
+        'CV Sent':       '#c8cdd6',
+        'Phone Screen':  '#f5d47a',
+        '1st Interview': '#f5a86a',
+        '2nd Interview': '#7dc4a0',
+        '3rd Interview': '#5bb89a',
+        'Final Round':   '#b09de8',
+        'Offer':         '#7dc4a0',
+      };
+      return map[stage] || '#c8cdd6';
+    },
+
+    stageBarPct(stage) {
+      const bs = this.s.by_stage || {};
+      const max = Math.max(...Object.values(bs), 1);
+      return Math.round((bs[stage] || 0) / max * 100);
+    },
+
+    barHeight(count) {
+      const max = Math.max(...(this.s.monthly || []).map(m => m.count), 1);
+      return Math.max(Math.round(count / max * 80), 4);
+    },
+
+    formatMonth(ym) {
+      const [y, m] = ym.split('-');
+      return new Date(y, m - 1).toLocaleString('en', { month: 'short' });
+    },
+  }
+}
+</script>
+<script src="demo.js?v=10"></script>
+<script src="auth.js?v=5"></script>
+</body>
+</html>

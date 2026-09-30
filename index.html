@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taylor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&family=Heebo:wght@300;400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link rel="stylesheet" href="style.css?v=71">
+<script src="localdb.js"></script>
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">Taylor<span class="brand-tagline" id="brandTagline">Yuvi's personal application tracker</span></span>
+  <div class="topnav-links">
+    <a href="index.html" class="active">Home</a>
+    <a href="index.html" class="gen-only">New Application</a>
+    <a href="history.html">Applications</a>
+    <a href="interviewing.html">Interviewing</a>
+    <a href="stats.html">Stats</a>
+  </div>
+  <div class="topnav-right">
+    <div class="token-counter" id="tokenCounter" title="API cost this session">⚡ <span id="tcCalls">0</span> calls · <span class="tc-cost" id="tcCost">$0.000</span></div>
+    <div class="built-badge"><span class="badge-dot"></span><a href="https://www.linkedin.com/in/yuval-knobel-248ba2174" target="_blank" rel="noopener" class="built-badge-link"><strong>Yuval Knobel AI Ltd</strong></a></div>
+    <button class="tour-btn" onclick="startTour()">▶ Tour</button>
+  </div>
+</nav>
+<script>fetch("/api/config").then(r=>r.json()).then(c=>{if(!c.is_demo)return;document.querySelectorAll("*").forEach(el=>{el.childNodes.forEach(n=>{if(n.nodeType===3)n.textContent=n.textContent.replace(/Yuvi/g,c.display_name);});});});</script>
+
+<div class="layout" x-data="sidebarData()" x-init="init()">
+
+  <!-- ── Sidebar ───────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Applications</span>
+      <span class="sidebar-count" x-text="totalApps()"></span>
+    </div>
+    <div class="sidebar-loading" x-show="loading">Loading...</div>
+    <a href="history.html" class="sidebar-all">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1.5H2zm0 3h12v1.5H2zm0 3h8v1.5H2z"/></svg>
+      All Applications
+    </a>
+    <div x-show="!loading" x-cloak>
+      <template x-for="cat in categories" :key="cat.id">
+        <div class="cat-group">
+          <div class="cat-header" @click="!editingCat[cat.id] && toggle(cat.id)">
+            <div class="cat-header-left" style="flex:1;min-width:0;">
+              <span class="cat-chevron" :class="expanded[cat.id] ? 'open' : ''">›</span>
+              <span class="cat-dot" :style="`background:${cat.color}`"></span>
+              <template x-if="!editingCat[cat.id]">
+                <span class="cat-name" x-text="cat.name"></span>
+              </template>
+              <template x-if="editingCat[cat.id]">
+                <input class="cat-rename-input" :value="cat.name"
+                       @click.stop
+                       @keydown.enter.stop="renameCategory(cat.id, $event.target.value)"
+                       @keydown.escape.stop="editingCat = {...editingCat, [cat.id]: false}"
+                       @blur="renameCategory(cat.id, $event.target.value)"
+                       x-init="$nextTick(() => $el.focus())">
+              </template>
+            </div>
+            <div class="cat-header-right">
+              <span class="cat-count" x-text="cat.applications.length"></span>
+              <button class="cat-edit" @click.stop="editingCat = {...editingCat, [cat.id]: true}" title="Rename">✎</button>
+              <button class="cat-delete" @click="deleteCategory(cat.id, $event)" title="Delete">×</button>
+            </div>
+          </div>
+          <div class="cat-apps" x-show="expanded[cat.id]" x-cloak>
+            <template x-if="cat.applications.length === 0">
+              <div class="cat-empty">Nothing here yet</div>
+            </template>
+            <template x-for="app in cat.applications" :key="app.id">
+              <div class="app-item" onclick="location.href='history.html'" style="cursor:pointer">
+                <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                <div class="app-info">
+                  <span class="app-company" x-text="app.company_name || 'Unknown'"></span>
+                  <span class="app-role" x-text="app.job_title || ''"></span>
+                </div>
+                <a x-show="appUrl(app)" :href="appUrl(app)" class="app-dl" download @click.stop>↓</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <template x-if="uncategorised.length > 0">
+        <div class="cat-group">
+          <div class="cat-header" @click="toggle('__uncategorised__')">
+            <div class="cat-header-left">
+              <span class="cat-chevron" :class="expanded['__uncategorised__'] ? 'open' : ''">›</span>
+              <span class="cat-dot" style="background:#d1d5db"></span>
+              <span class="cat-name">Unlabelled</span>
+            </div>
+            <span class="cat-count" x-text="uncategorised.length"></span>
+          </div>
+          <div class="cat-apps" x-show="expanded['__uncategorised__']" x-cloak>
+            <template x-for="app in uncategorised" :key="app.id">
+              <div class="app-item" onclick="location.href='history.html'" style="cursor:pointer">
+                <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                <div class="app-info">
+                  <span class="app-company" x-text="app.company_name || 'Unknown'"></span>
+                  <span class="app-role" x-text="app.job_title || ''"></span>
+                </div>
+                <a x-show="appUrl(app)" :href="appUrl(app)" class="app-dl" download @click.stop>↓</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <div class="add-cat-row">
+        <div x-show="!showNewCat">
+          <button class="btn-add-cat" @click="showNewCat=true">+ New label</button>
+        </div>
+        <div x-show="showNewCat" x-cloak class="new-cat-form">
+          <input class="new-cat-input" x-model="newCatName" placeholder="Label name"
+                 @keydown.enter="addCategory()" @keydown.escape="showNewCat=false">
+          <button class="btn btn-sm btn-primary" @click="addCategory()">Add</button>
+          <button class="btn btn-sm btn-ghost" @click="showNewCat=false">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main content ──────────────────────────────────────────────────── -->
+  <main x-data="homePage()" x-init="init()" class="main-content">
+    <div class="main-inner" style="max-width:1100px">
+
+      <!-- Greeting (compact) -->
+      <div class="hero-banner hero-sm">
+        <div class="hero-inner">
+          <div class="hero-title-row">
+            <h1 class="hero-title" id="heroGreeting">Hey Yuvi 👋</h1>
+            <span id="targetRoleTag" class="target-role-tag" style="display:none"></span>
+          </div>
+          <p class="hero-sub">The job hunt gets messy fast. Log every application, watch them move, and always know what's next.</p>
+          <button type="button" class="btn btn-primary dash-cta" @click="openAddAppModal()">+ Track a new application</button>
+          <a href="index.html" class="btn btn-primary dash-cta gen-only">Try it now! →</a>
+        </div>
+      </div>
+
+      <!-- Glance strip: totals (compact) -->
+      <div class="dash-stats dash-stats-compact">
+        <a href="history.html" class="dash-tile" style="background:#EEEDFE">
+          <div class="dash-tile-top"><span class="dash-tile-icon">💼</span><span class="dash-tile-value" style="color:#26215C" x-text="(s.tracked ?? s.total) || 0"></span></div>
+          <div class="dash-tile-label" style="color:#3C3489">Applications</div>
+        </a>
+        <a href="history.html" class="dash-tile" style="background:#DEDBFB">
+          <div class="dash-tile-top"><span class="dash-tile-icon">📤</span><span class="dash-tile-value" style="color:#26215C" x-text="(s.by_status && s.by_status.sent) || 0"></span></div>
+          <div class="dash-tile-label" style="color:#3C3489">Awaiting reply</div>
+        </a>
+        <a href="interviewing.html" class="dash-tile" style="background:#CECBF6">
+          <div class="dash-tile-top"><span class="dash-tile-icon">📅</span><span class="dash-tile-value" style="color:#26215C" x-text="s.interviewing || 0"></span></div>
+          <div class="dash-tile-label" style="color:#3C3489">Interviewing</div>
+        </a>
+        <a href="interviewing.html" class="dash-tile" style="background:#BBB4F0">
+          <div class="dash-tile-top"><span class="dash-tile-icon">🎉</span><span class="dash-tile-value" style="color:#26215C" x-text="s.offers || 0"></span></div>
+          <div class="dash-tile-label" style="color:#3C3489">Offers</div>
+        </a>
+      </div>
+
+      <!-- Focus: This week + Tasks side by side -->
+      <div class="home-focus-grid">
+
+      <!-- This week -->
+      <div class="home-card">
+        <div class="home-card-title">🗓 This month</div>
+        <div class="week-metrics">
+          <a href="interviewing.html" class="week-metric">
+            <div class="week-metric-num" x-text="week.interviews_count || 0"></div>
+            <div class="week-metric-label">Interviews</div>
+          </a>
+          <a href="history.html" class="week-metric">
+            <div class="week-metric-num" x-text="week.cvs_to_send || 0"></div>
+            <div class="week-metric-label">CVs to send</div>
+          </a>
+          <a href="history.html" class="week-metric">
+            <div class="week-metric-num" x-text="week.sent_this_week || 0"></div>
+            <div class="week-metric-label">Sent</div>
+          </a>
+        </div>
+        <template x-if="week.interviews && week.interviews.length">
+          <div class="week-interviews">
+            <template x-for="iv in week.interviews" :key="iv.company_name + iv.step_name + iv.step_date">
+              <a href="interviewing.html" class="week-interview-row">
+                <span class="week-interview-date" x-text="fmtDate(iv.step_date)"></span>
+                <span class="week-interview-text"><strong x-text="iv.company_name || 'Unknown'"></strong> <span x-text="'· ' + (iv.step_name || '')"></span></span>
+              </a>
+            </template>
+          </div>
+        </template>
+        <template x-if="!week.interviews || !week.interviews.length">
+          <div class="week-empty">No upcoming interviews scheduled.</div>
+        </template>
+      </div>
+
+      <!-- Tasks -->
+      <div class="home-card">
+        <div class="home-card-title"><span class="home-card-ico"><svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><rect width="20" height="20" rx="6" fill="#6366f1"/><path d="M5.3 10.2l3 3 6.2-6.7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Tasks</div>
+        <div class="task-list" x-ref="taskList">
+          <template x-for="task in tasks" :key="task.id">
+            <div class="task-row" :data-id="task.id">
+              <span class="task-drag" title="Drag to reorder">⠿</span>
+              <input type="checkbox" class="task-check" :checked="task.done" @change="toggleTask(task)">
+              <template x-if="!task._editing">
+                <span class="task-title" :class="task.done ? 'done' : ''" x-text="task.title" @click="task._editing = true" title="Click to edit"></span>
+              </template>
+              <template x-if="task._editing">
+                <input class="task-edit-input" :value="task.title"
+                       @keydown.enter="task.title = $event.target.value; saveTaskTitle(task)"
+                       @keydown.escape="task._editing = false"
+                       @blur="task.title = $event.target.value; saveTaskTitle(task)"
+                       x-init="$nextTick(() => $el.focus())">
+              </template>
+              <button class="task-del" @click="deleteTask(task)" title="Delete task">×</button>
+            </div>
+          </template>
+          <div class="task-empty" x-show="!tasks.length" x-cloak>Nothing yet. Add your first task below.</div>
+        </div>
+        <div class="task-add-row">
+          <input class="task-add-input" x-model="newTask" placeholder="Add a task (e.g. follow up with recruiter)"
+                 @keydown.enter="addTask()">
+          <button class="btn btn-sm btn-primary" @click="addTask()">Add</button>
+        </div>
+      </div>
+
+      </div><!-- /.home-focus-grid -->
+
+    </div><!-- /.main-inner -->
+  </main>
+
+</div><!-- /.layout -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+<script src="sidebar.js?v=2"></script>
+<script>
+function homePage() {
+  return {
+    s: {},
+    week: { interviews: [], interviews_count: 0, cvs_to_send: 0, sent_this_week: 0 },
+    tasks: [],
+    newTask: '',
+    async init() {
+      await Promise.all([this.loadStats(), this.loadWeek(), this.loadTasks()]);
+      this.$nextTick(() => this.initSortable());
+    },
+    initSortable() {
+      const el = this.$refs.taskList;
+      if (!el || el._sortable || typeof Sortable === 'undefined') return;
+      el._sortable = Sortable.create(el, {
+        handle: '.task-drag',
+        animation: 150,
+        ghostClass: 'task-ghost',
+        onEnd: () => {
+          const ids = [...el.querySelectorAll('.task-row')].map(n => n.dataset.id);
+          this.tasks = ids.map(id => this.tasks.find(t => t.id === id)).filter(Boolean);
+          fetch('/api/tasks/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+        },
+      });
+    },
+    async loadStats() {
+      try { this.s = await (await fetch('/api/stats')).json(); } catch (e) { this.s = {}; }
+    },
+    async loadWeek() {
+      try { this.week = await (await fetch('/api/week-summary')).json(); } catch (e) {}
+    },
+    async loadTasks() {
+      try { this.tasks = await (await fetch('/api/tasks')).json(); } catch (e) { this.tasks = []; }
+    },
+    async addTask() {
+      const title = this.newTask.trim();
+      if (!title) return;
+      await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+      this.newTask = '';
+      await this.loadTasks();
+    },
+    async toggleTask(task) {
+      task.done = task.done ? 0 : 1;
+      await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ done: task.done }) });
+    },
+    async saveTaskTitle(task) {
+      task._editing = false;
+      const title = (task.title || '').trim();
+      if (!title) { await this.loadTasks(); return; }
+      await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) });
+    },
+    async deleteTask(task) {
+      await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+      await this.loadTasks();
+    },
+    fmtDate(d) {
+      if (!d) return '';
+      return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    },
+  };
+}
+function digestWidget() {
+  return {
+    items: [],
+    hasItems: false,
+    async init() {
+      try {
+        const res = await fetch('/api/digest');
+        const d = await res.json();
+        const items = [];
+        const stepColors = ['#6db8f7','#f472b6','#fb923c','#a78bfa','#34d399','#f87171','#facc15'];
+        let colorIdx = 0;
+        for (const s of (d.upcoming_steps || [])) {
+          const stepDateFmt = s.step_date ? new Date(s.step_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : s.step_date;
+          items.push({ color: stepColors[colorIdx++ % stepColors.length], text: `${s.company_name}: ${s.step_name} on ${stepDateFmt}`, href: '/interviewing' });
+        }
+        this.items = items;
+        this.hasItems = items.length > 0;
+      } catch(e) {}
+    },
+  };
+}
+</script>
+<script src="demo.js?v=10"></script>
+<script src="auth.js?v=5"></script>
+</body>
+</html>

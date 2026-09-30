@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taylor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&family=Heebo:wght@300;400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link rel="stylesheet" href="style.css?v=76">
+<style>
+  .main-inner { max-width: 1000px; }
+  /* Locked (done) view: inputs read as plain text, controls non-interactive. */
+  .process-card.card-locked .process-detail-input,
+  .process-card.card-locked .process-notes-input,
+  .process-card.card-locked .step-input,
+  .process-card.card-locked .step-notes {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    -webkit-appearance: none; appearance: none;
+    resize: none;
+    pointer-events: none;
+    padding-left: 0;
+  }
+  .process-card.card-locked .stage-select,
+  .process-card.card-locked .step-outcome-btn,
+  .process-card.card-locked .flag-chip { pointer-events: none; }
+  .process-card.card-locked .step-delete { display: none; }
+</style>
+<script src="localdb.js"></script>
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">Taylor<span class="brand-tagline" id="brandTagline">Yuvi's personal application tracker</span></span>
+  <div class="topnav-links">
+    <a href="index.html">Home</a>
+    <a href="index.html" class="gen-only">New Application</a>
+    
+    <a href="history.html">Applications</a>
+    <a href="interviewing.html" class="active">Interviewing</a>
+        <a href="stats.html">Stats</a>
+  </div>
+  <div class="topnav-right">
+    <div class="token-counter" id="tokenCounter" title="API cost this session">⚡ <span id="tcCalls">0</span> calls · <span class="tc-cost" id="tcCost">$0.000</span></div>
+    <div class="built-badge"><span class="badge-dot"></span><a href="https://www.linkedin.com/in/yuval-knobel-248ba2174" target="_blank" rel="noopener" class="built-badge-link"><strong>Yuval Knobel AI Ltd</strong></a></div>
+    <button class="tour-btn" onclick="startTour()">▶ Tour</button>
+  </div>
+</nav>
+<script>fetch("/api/config").then(r=>r.json()).then(c=>{if(!c.is_demo)return;document.querySelectorAll("*").forEach(el=>{el.childNodes.forEach(n=>{if(n.nodeType===3)n.textContent=n.textContent.replace(/Yuvi/g,c.display_name);});});});</script>
+
+<div class="layout" x-data="sidebarData()" x-init="init()">
+
+  <!-- ── Sidebar ───────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Applications</span>
+      <span class="sidebar-count" x-text="totalApps()"></span>
+    </div>
+    <div class="sidebar-loading" x-show="loading">Loading...</div>
+    <a href="history.html" class="sidebar-all">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1.5H2zm0 3h12v1.5H2zm0 3h8v1.5H2z"/></svg>
+      All Applications
+    </a>
+    <div x-show="!loading" x-cloak>
+      <template x-for="cat in categories" :key="cat.id">
+        <div class="cat-group">
+          <div class="cat-header" @click="toggle(cat.id)">
+            <div class="cat-header-left">
+              <span class="cat-chevron" :class="expanded[cat.id] ? 'open' : ''">›</span>
+              <span class="cat-dot" :style="`background:${cat.color}`"></span>
+              <span class="cat-name" x-text="cat.name"></span>
+            </div>
+            <div class="cat-header-right">
+              <span class="cat-count" x-text="cat.applications.length"></span>
+              <button class="cat-delete" @click="deleteCategory(cat.id, $event)" title="Delete">×</button>
+            </div>
+          </div>
+          <div class="cat-apps" x-show="expanded[cat.id]" x-cloak>
+            <template x-if="cat.applications.length === 0">
+              <div class="cat-empty">Nothing here yet</div>
+            </template>
+            <template x-for="app in cat.applications" :key="app.id">
+              <div class="app-item">
+                <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                <div class="app-info">
+                  <span class="app-company" x-text="app.company_name || 'Unknown'"></span>
+                  <span class="app-role" x-text="app.job_title || ''"></span>
+                </div>
+                <a x-show="appUrl(app)" :href="appUrl(app)" class="app-dl" download>↓</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <template x-if="uncategorised.length > 0">
+        <div class="cat-group">
+          <div class="cat-header" @click="toggle('__uncategorised__')">
+            <div class="cat-header-left">
+              <span class="cat-chevron" :class="expanded['__uncategorised__'] ? 'open' : ''">›</span>
+              <span class="cat-dot" style="background:#d1d5db"></span>
+              <span class="cat-name">Unlabelled</span>
+            </div>
+            <span class="cat-count" x-text="uncategorised.length"></span>
+          </div>
+          <div class="cat-apps" x-show="expanded['__uncategorised__']" x-cloak>
+            <template x-for="app in uncategorised" :key="app.id">
+              <div class="app-item">
+                <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                <div class="app-info">
+                  <span class="app-company" x-text="app.company_name || 'Unknown'"></span>
+                  <span class="app-role" x-text="app.job_title || ''"></span>
+                </div>
+                <a x-show="appUrl(app)" :href="appUrl(app)" class="app-dl" download>↓</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <div class="add-cat-row">
+        <div x-show="!showNewCat">
+          <button class="btn-add-cat" @click="showNewCat=true">+ Add a category</button>
+        </div>
+        <div x-show="showNewCat" x-cloak class="new-cat-form">
+          <input class="new-cat-input" x-model="newCatName" placeholder="Category name"
+                 @keydown.enter="addCategory()" @keydown.escape="showNewCat=false">
+          <button class="btn btn-sm btn-primary" @click="addCategory()">Add</button>
+          <button class="btn btn-sm btn-ghost" @click="showNewCat=false">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ──────────────────────────────────────────────────────────── -->
+  <main x-data="interviewingPage()" x-init="init()" class="main-content">
+    <div class="main-inner">
+
+      <div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div>
+          <h1>Active Processes <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#7dc4a0;vertical-align:middle;margin-left:4px;margin-bottom:2px"></span></h1>
+          <p class="subtitle">Track every step of your live interviews — notes, dates, impressions.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding-top:6px">
+          <button class="btn btn-sm btn-primary" @click="addProcess()" :disabled="_adding" style="white-space:nowrap">
+            <span x-show="!_adding">+ Add a process</span>
+            <span x-show="_adding" x-cloak>Adding...</span>
+          </button>
+          <label style="font-size:13px;color:var(--muted);white-space:nowrap">Sort by</label>
+          <select class="process-detail-input" style="width:auto;font-size:13px;padding:6px 10px" x-model="sortBy">
+            <option value="manual">My order</option>
+            <option value="next_step">Next interview date</option>
+            <option value="company">Company name</option>
+            <option value="stage">Interview stage</option>
+            <option value="added">Date added</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="loading-box" x-show="loading" x-cloak>
+        <div class="spinner"></div><p>Loading your active processes...</p>
+      </div>
+
+      <div class="empty-state" x-show="!loading && applications.length === 0" x-cloak>
+        <p>No active interviews. Got one coming up? Add it here to track every step.</p>
+        <p style="font-size:13px;margin-top:4px">✨ Tip: mark any application as <strong>Interviewing</strong> on the Applications page and it will pop up here automatically.</p>
+        <button class="btn btn-primary" @click="addProcess()" :disabled="_adding" style="margin-top:12px">
+          <span x-show="!_adding">+ Add a process</span>
+          <span x-show="_adding" x-cloak>Adding...</span>
+        </button>
+      </div>
+
+      <!-- One card per active process -->
+      <div class="process-list" x-show="!loading" x-cloak x-ref="processList">
+        <template x-for="app in sortedApplications" :key="app.id">
+          <div class="process-card" :class="{ 'card-locked': !app._editing }" :data-id="app.id">
+
+            <!-- Card header -->
+            <div class="process-header">
+              <div class="process-title-block">
+                <input type="number" min="1" class="order-num" x-model.number="app._order"
+                       x-show="sortBy === 'manual'" x-cloak
+                       @change="saveOrder(app)" @click.stop title="Set appearance order">
+                <span class="sdot" style="background:#a8d8c0; width:10px; height:10px;"></span>
+                <div style="flex:1;min-width:0;">
+                  <template x-if="!app._editing">
+                    <div>
+                      <h2 class="process-company" x-text="app.company_name || 'Unknown company'"></h2>
+                      <span class="process-role" x-text="app.job_title || ''"></span>
+                    </div>
+                  </template>
+                  <template x-if="app._editing">
+                    <div style="display:flex;flex-direction:column;gap:4px;max-width:360px;">
+                      <input class="process-detail-input" style="font-weight:700;font-size:16px;" type="text"
+                             x-model="app.company_name" placeholder="Company name" @blur="saveDetails(app)">
+                      <input class="process-detail-input" type="text"
+                             x-model="app.job_title" placeholder="Role / job title" @blur="saveDetails(app)">
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <div class="process-header-actions">
+                <button class="btn btn-sm" :class="app._editing ? 'btn-primary' : 'btn-secondary'"
+                        @click="toggleEdit(app)"
+                        :title="app._editing ? 'Finish editing' : 'Edit this card'">
+                  <span x-show="!app._editing">✎ Edit</span>
+                  <span x-show="app._editing" x-cloak>✓ Done</span>
+                </button>
+                <select class="stage-select" :class="'status-sel-' + app.app_status"
+                        x-model="app.app_status" @change="updateStatus(app)">
+                  <option value="sent">Sent</option>
+                  <option value="interviewing">Interviewing</option>
+                  <option value="offer">Offer</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <a x-show="app.output_cv_path"
+                   :href="app.output_cv_path"
+                   class="btn btn-sm btn-secondary" download>CV ↓</a>
+                <button class="btn btn-sm btn-delete" x-show="app._editing" x-cloak
+                        @click="archiveProcess(app)" title="Delete this process (moves to Archived, restorable)">🗑 Delete</button>
+              </div>
+            </div>
+
+            <!-- Flags -->
+            <div class="flags-row">
+              <template x-for="def in visibleFlags(app)" :key="def.key">
+                <button class="flag-chip" :class="hasFlag(app, def.key) ? 'active' : ''"
+                        :style="hasFlag(app, def.key) ? `background:${def.bg};color:${def.color}` : ''"
+                        @click="toggleFlag(app, def)"
+                        :title="hasFlag(app, def.key) ? 'Remove flag' : 'Add flag'">
+                  <span class="flag-emoji" x-text="def.emoji"></span><span x-text="def.label"></span>
+                </button>
+              </template>
+            </div>
+
+            <!-- JD quick-facts -->
+            <div class="jd-summary-card jd-summary-inline" x-show="app.jd_summary">
+              <div class="jd-summary-grid">
+                <template x-for="item in jdItems(app.jd_summary)" :key="item.label">
+                  <div class="jd-summary-item" x-show="item.value">
+                    <span class="jd-summary-icon" x-text="item.icon"></span>
+                    <div>
+                      <div class="jd-summary-label" x-text="item.label"></div>
+                      <div class="jd-summary-value" x-text="item.value"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Company research card -->
+            <div x-show="app.company_brief" x-cloak>
+              <div class="company-research-toggle" @click="app._showResearch = !app._showResearch">
+                <span>🏢 Company research</span>
+                <span x-text="app._showResearch ? '▲' : '▼'" style="font-size:11px;color:var(--muted)"></span>
+              </div>
+              <div class="company-research-body" x-show="app._showResearch" x-cloak>
+                <p class="brief-what" x-text="app.company_brief && app.company_brief.what_they_do"></p>
+                <div class="brief-grid">
+                  <template x-for="item in [
+                    {icon:'📈', label:'Stage', val: app.company_brief && app.company_brief.stage},
+                    {icon:'👥', label:'Size', val: app.company_brief && app.company_brief.size},
+                    {icon:'📍', label:'HQ', val: app.company_brief && app.company_brief.hq},
+                    {icon:'🗓', label:'Founded', val: app.company_brief && app.company_brief.founded},
+                    {icon:'👤', label:'CEO', val: app.company_brief && app.company_brief.ceo},
+                    {icon:'🤝', label:'Head of People', val: app.company_brief && app.company_brief.head_of_people},
+                  ]" :key="item.label">
+                    <div class="brief-item" x-show="item.val">
+                      <span class="brief-icon" x-text="item.icon"></span>
+                      <span class="brief-label" x-text="item.label"></span>
+                      <span class="brief-value" x-text="item.val"></span>
+                    </div>
+                  </template>
+                </div>
+                <template x-if="app.company_brief && app.company_brief.interesting && app.company_brief.interesting.length">
+                  <div class="brief-facts">
+                    <template x-for="fact in app.company_brief.interesting" :key="fact">
+                      <div class="brief-fact">💡 <span x-text="fact"></span></div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Quick details row -->
+            <div class="process-details-row">
+              <div class="process-detail-field" x-show="app._editing || app.interview_stage" x-cloak>
+                <label class="process-section-label">Interview stage</label>
+                <select class="process-detail-input" x-model="app.interview_stage"
+                        @change="saveDetails(app)">
+                  <option value="">— not set —</option>
+                  <option value="CV Sent">CV Sent</option>
+                  <option value="Phone Screen">Phone Screen</option>
+                  <option value="1st Interview">1st Interview</option>
+                  <option value="2nd Interview">2nd Interview</option>
+                  <option value="3rd Interview">3rd Interview</option>
+                  <option value="Final Round">Final Round</option>
+                  <option value="Offer">Offer</option>
+                </select>
+              </div>
+              <div class="process-detail-field" x-show="app._editing || app.referral_name" x-cloak>
+                <label class="process-section-label">Referred by</label>
+                <input class="process-detail-input" type="text"
+                       x-model="app.referral_name"
+                       @blur="saveDetails(app)"
+                       placeholder="Name of referral (if any)">
+              </div>
+              <div class="process-detail-field" x-show="app._editing || app.salary_asked" x-cloak>
+                <label class="process-section-label">Salary asked</label>
+                <input class="process-detail-input" type="text"
+                       x-model="app.salary_asked"
+                       @blur="saveDetails(app)"
+                       placeholder="e.g. ₪35,000 / month">
+              </div>
+            </div>
+
+            <!-- Process notes (free-text) -->
+            <div class="process-notes-section" x-show="app._editing || (app.process_notes && app.process_notes.trim())" x-cloak>
+              <label class="process-section-label">Process notes</label>
+              <template x-if="app._editing">
+                <div>
+                  <textarea class="process-notes-input" dir="auto"
+                            x-model="app.process_notes"
+                            @blur="saveNotes(app)"
+                            placeholder="Write anything here as you go - who you spoke with, your impressions, things to prepare for the next round..."
+                            rows="8"></textarea>
+                  <div style="display:flex;align-items:center;gap:10px;margin-top:8px;"><button class="btn btn-sm btn-primary" @click="saveNotes(app)">Save changes</button><span x-show="app._saved" x-cloak style="font-size:12px;color:#4a9e6e;font-weight:500;">✓ Saved</span><span x-show="app._saving" x-cloak style="font-size:12px;color:var(--muted);">Saving...</span></div>
+                </div>
+              </template>
+              <template x-if="!app._editing">
+                <p class="process-notes-view" dir="auto" x-text="app.process_notes"></p>
+              </template>
+            </div>
+
+            <!-- Interview prep — Claude-powered, hidden when AI_FEATURES_ENABLED=0. -->
+            <div class="prep-section ai-only" x-show="app._editing || (app._prepQuestions && app._prepQuestions.length)" x-cloak>
+              <div class="steps-header">
+                <label class="process-section-label">Interview prep</label>
+                <button class="btn btn-sm btn-primary" @click="loadPrep(app)"
+                        x-show="app._editing" x-cloak
+                        :disabled="app._prepLoading">
+                  <span x-show="!app._prepLoading">🧠 Generate prep questions</span>
+                  <span x-show="app._prepLoading" x-cloak><span class="spinner-sm"></span> Thinking...</span>
+                </button>
+              </div>
+              <div x-show="app._prepQuestions && app._prepQuestions.length" x-cloak class="prep-questions">
+                <template x-for="(q, i) in (app._prepQuestions || [])" :key="i">
+                  <div class="prep-card">
+                    <div class="prep-card-header">
+                      <span class="prep-type-badge" x-text="q.type"></span>
+                      <span class="prep-question" x-text="q.question"></span>
+                    </div>
+                    <div class="prep-answer" x-text="q.suggested_answer"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Timeline strip — compact visual progression of steps, in date
+                 order. Rendered above the detailed table when there are 2+
+                 steps so the current position on the funnel is glanceable. -->
+            <div class="timeline-section" x-show="app.steps && app.steps.length >= 2" x-cloak>
+              <div class="timeline-strip">
+                <template x-for="(step, i) in timelineSteps(app)" :key="step.id">
+                  <div class="timeline-node">
+                    <div class="timeline-dot" :style="`background:${outcomeColor(step.outcome)}`"
+                         :title="outcomeLabel(step.outcome)"></div>
+                    <div class="timeline-label">
+                      <span class="timeline-name" x-text="step.step_name || 'Step ' + (i+1)"></span>
+                      <span class="timeline-date" x-show="step.step_date" x-text="formatTimelineDate(step.step_date)"></span>
+                    </div>
+                    <div class="timeline-connector" x-show="i < timelineSteps(app).length - 1"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Interview steps table -->
+            <div class="steps-section">
+              <div class="steps-header">
+                <label class="process-section-label">Interview steps</label>
+                <button class="btn btn-sm btn-primary" @click="addStep(app)" x-show="app._editing" x-cloak>+ Add step</button>
+              </div>
+
+              <div x-show="app.steps.length === 0 && app._editing" x-cloak class="steps-empty">
+                No steps yet - add your first one above.
+              </div>
+              <div x-show="app.steps.length === 0 && !app._editing" x-cloak class="steps-empty">
+                No interview steps yet.
+              </div>
+
+              <div class="steps-table-wrap" x-show="app.steps.length > 0">
+                <table class="steps-table">
+                  <thead>
+                    <tr>
+                      <th>Step</th>
+                      <th>Date</th>
+                      <th>With</th>
+                      <th>Outcome</th>
+                      <th>Notes</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="step in sortedSteps(app)" :key="step.id">
+                      <tr :class="'step-row-' + step.outcome">
+
+                        <!-- Step name -->
+                        <td>
+                          <input class="step-input step-name"
+                                 x-model="step.step_name"
+                                 @blur="saveStep(step)"
+                                 placeholder="e.g. TA Screen">
+                        </td>
+
+                        <!-- Date -->
+                        <td>
+                          <input class="step-input step-date" type="date"
+                                 x-model="step.step_date"
+                                 @change="saveStep(step)">
+                        </td>
+
+                        <!-- Interviewer -->
+                        <td>
+                          <input class="step-input step-interviewer"
+                                 x-model="step.interviewer"
+                                 @blur="saveStep(step)"
+                                 placeholder="Name / title">
+                        </td>
+
+                        <!-- Outcome -->
+                        <td>
+                          <div class="step-outcome-wrap" x-data="{open:false}" @click.outside="open=false">
+                            <button class="step-outcome-btn" :class="'outcome-' + step.outcome" @click="open=!open">
+                              <span class="sdot" :style="`background:${outcomeColor(step.outcome)}`"></span>
+                              <span x-text="outcomeLabel(step.outcome)"></span>
+                            </button>
+                            <div class="step-outcome-menu" x-show="open" x-cloak>
+                              <template x-for="o in outcomes" :key="o.value">
+                                <div class="step-outcome-option" @click="step.outcome=o.value; saveStep(step); open=false">
+                                  <span class="sdot" :style="`background:${o.color}`"></span>
+                                  <span x-text="o.label"></span>
+                                </div>
+                              </template>
+                            </div>
+                          </div>
+                        </td>
+
+                        <!-- Notes -->
+                        <td class="step-notes-cell">
+                          <textarea class="step-notes"
+                                    x-model="step.notes"
+                                    @blur="saveStep(step)"
+                                    placeholder="Your notes from this step..."
+                                    rows="2"></textarea>
+                        </td>
+
+                        <!-- Calendar + Delete -->
+                        <td style="white-space:nowrap">
+                          <button class="step-delete" @click="openSchedule(app, step)" title="Add to Google Calendar" style="opacity:0.7;margin-right:2px;">📅</button>
+                          <button class="step-delete" @click="deleteStep(app, step)" title="Remove step">×</button>
+                        </td>
+
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </template>
+      </div>
+
+      <!-- Archived processes -->
+      <div class="archive-section" x-show="!loading" x-cloak style="margin-top:28px;border-top:1px solid var(--border,#2a2f3a);padding-top:16px;">
+        <button class="btn btn-ghost btn-sm" @click="toggleArchive()" style="display:flex;align-items:center;gap:8px;">
+          <span x-text="showArchive ? '▾' : '▸'"></span>
+          <span>Archived processes</span>
+          <span x-show="archivedApps.length > 0" x-cloak
+                style="background:var(--border,#2a2f3a);border-radius:10px;padding:1px 8px;font-size:12px;"
+                x-text="archivedApps.length"></span>
+        </button>
+        <div x-show="showArchive" x-cloak style="margin-top:12px;">
+          <div x-show="archiveLoading" style="font-size:13px;color:var(--muted);padding:8px 0;">Loading...</div>
+          <div x-show="!archiveLoading && archivedApps.length === 0" x-cloak style="font-size:13px;color:var(--muted);padding:8px 0;">No archived processes.</div>
+          <template x-for="app in archivedApps" :key="app.id">
+            <div class="archive-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border,#2a2f3a);border-radius:8px;margin-bottom:8px;">
+              <div style="min-width:0;">
+                <div style="font-weight:600;font-size:14px;" x-text="app.company_name || 'Unknown company'"></div>
+                <div style="font-size:12px;color:var(--muted);" x-text="app.job_title || ''"></div>
+              </div>
+              <div style="display:flex;gap:8px;white-space:nowrap;">
+                <button class="btn btn-secondary btn-sm" @click="restoreProcess(app)" style="font-size:12px;">↩ Restore</button>
+                <button class="btn btn-delete btn-sm" @click="permanentDeleteProcess(app)" style="font-size:12px;">🗑 Delete forever</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div><!-- /.main-inner -->
+  </main>
+</div>
+
+<!-- ── Schedule modal ───────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="scheduleModalOverlay" style="display:none" onclick="if(event.target===this)closeScheduleModal()">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header" style="position:relative">
+      <h2>📅 Add to Google Calendar</h2>
+      <p id="scheduleModalSub" style="color:var(--muted);font-size:13px;"></p>
+      <button class="modal-close-x" onclick="closeScheduleModal()">✕</button>
+    </div>
+
+    <div id="scheduleForm">
+      <div class="field">
+        <label>Event title</label>
+        <input type="text" id="schSummary" class="input" placeholder="e.g. 1st Interview - Wix">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Date</label>
+          <input type="date" id="schDate" class="input">
+        </div>
+        <div class="field">
+          <label>Time</label>
+          <input type="time" id="schTime" class="input" value="10:00">
+        </div>
+      </div>
+      <div class="field">
+        <label>Duration</label>
+        <select id="schDuration" class="input">
+          <option value="30">30 min</option>
+          <option value="45">45 min</option>
+          <option value="60" selected>1 hour</option>
+          <option value="90">1.5 hours</option>
+          <option value="120">2 hours</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Notes <span class="label-optional">optional</span></label>
+        <textarea id="schNotes" class="input" rows="3" placeholder="Interviewer, Zoom link, prep notes…"></textarea>
+      </div>
+      <div id="schError" style="color:#dc2626;font-size:13px;margin-bottom:8px;display:none"></div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="schSubmitBtn" onclick="submitSchedule()">Open in Google Calendar ↗</button>
+        <button class="btn btn-ghost" onclick="closeScheduleModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="sidebar.js?v=2"></script>
+<script>
+const OUTCOMES = [
+  { value: 'scheduled', label: 'Scheduled',        color: '#82a9dd' },
+  { value: 'pending',   label: 'Pending response', color: '#f5d47a' },
+  { value: 'passed',    label: 'Passed',           color: '#7dc4a0' },
+  { value: 'rejected',  label: 'Rejected',         color: '#f59ab0' },
+];
+
+function interviewingPage() {
+  return {
+    applications: [],
+    loading: true,
+    _adding: false,
+    archivedApps: [],
+    showArchive: false,
+    archiveLoading: false,
+    outcomes: OUTCOMES,
+    sortBy: localStorage.getItem('interviewSortBy') || 'manual',
+
+    get sortedApplications() {
+      const today = new Date().toISOString().slice(0, 10);
+      const STAGE_ORDER = ['CV Sent', 'Phone Screen', '1st Interview', '2nd Interview', '3rd Interview', 'Final Round', 'Offer'];
+      // For next-step sort: apps with an upcoming interview come first (soonest),
+      // then apps without one (most recently added first).
+      const nextInfo = app => {
+        const dates = (app.steps || []).map(s => s.step_date).filter(Boolean).sort();
+        const upcoming = dates.filter(d => d >= today);
+        return upcoming.length ? { group: 0, key: upcoming[0] } : { group: 1, key: app.created_at || '' };
+      };
+      if (this.sortBy === 'manual') {
+        return [...this.applications].sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+      }
+      return [...this.applications].sort((a, b) => {
+        if (this.sortBy === 'company') {
+          return (a.company_name || '').localeCompare(b.company_name || '');
+        }
+        if (this.sortBy === 'stage') {
+          const ia = STAGE_ORDER.indexOf(a.interview_stage);
+          const ib = STAGE_ORDER.indexOf(b.interview_stage);
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        }
+        if (this.sortBy === 'added') {
+          return new Date(b.created_at) - new Date(a.created_at);
+        }
+        // next_step
+        const A = nextInfo(a), B = nextInfo(b);
+        if (A.group !== B.group) return A.group - B.group;
+        return A.group === 0 ? A.key.localeCompare(B.key) : B.key.localeCompare(A.key);
+      });
+    },
+
+    async init() {
+      this.$watch('sortBy', v => localStorage.setItem('interviewSortBy', v));
+      const res = await fetch('/api/interviewing');
+      const data = await res.json();
+      // Assign a 1-based appearance order from the saved order returned by the API
+      this.applications = data.map((a, i) => ({ ...a, _order: i + 1, _editing: false, _saving: false, _saved: false, _prepLoading: false, _prepQuestions: [], _showResearch: false }));
+      this.loading = false;
+    },
+
+    // Move an app to the position typed into its order field, renumber the rest, and save.
+    saveOrder(app) {
+      const n = this.applications.length;
+      let target = parseInt(app._order);
+      if (isNaN(target)) target = n;
+      target = Math.max(1, Math.min(n, target));
+      const others = this.applications.filter(a => a.id !== app.id).sort((a, b) => (a._order ?? 0) - (b._order ?? 0));
+      others.splice(target - 1, 0, app);
+      others.forEach((a, i) => { a._order = i + 1; });
+      this.sortBy = 'manual';
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      // Rebuild the list from scratch in the new order - moving DOM nodes in place
+      // can glitch (cards landing out of sequence, stale numbers in the inputs).
+      this.applications = [];
+      this.$nextTick(() => { this.applications = others; });
+      fetch('/api/applications/reorder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: others.map(a => a.id) }),
+      });
+    },
+
+    // Create a blank process card directly (no CV upload / tailoring flow).
+    async addProcess() {
+      if (this._adding) return;
+      this._adding = true;
+      try {
+        const res = await fetch('/api/applications/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const app = await res.json();
+        const card = { ...app, _order: 0, _editing: true, _saving: false, _saved: false, _prepLoading: false, _prepQuestions: [], _showResearch: false };
+        // Put it on top and renumber manual order so it appears first.
+        this.applications.forEach(a => { a._order = (a._order ?? 0) + 1; });
+        this.applications.unshift(card);
+        this.sortBy = 'manual';
+        this.$nextTick(() => {
+          const el = this.$refs.processList && this.$refs.processList.querySelector(`[data-id="${app.id}"]`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      } catch (e) {}
+      this._adding = false;
+    },
+
+    // Archive a process (soft delete). Removes it from the board; restorable below.
+    async archiveProcess(app) {
+      if (!confirm(`Delete the process for ${app.company_name || 'this company'}? It moves to Archived and you can restore it.`)) return;
+      await fetch(`/api/applications/${app.id}`, { method: 'DELETE' });
+      this.applications = this.applications.filter(a => a.id !== app.id);
+      if (this.showArchive || this.archivedApps.length) {
+        this.archivedApps = [{ ...app }, ...this.archivedApps];
+      }
+    },
+
+    async toggleArchive() {
+      this.showArchive = !this.showArchive;
+      if (this.showArchive) await this.loadArchive();
+    },
+
+    async loadArchive() {
+      this.archiveLoading = true;
+      try {
+        const res = await fetch('/api/applications/archived');
+        const data = await res.json();
+        this.archivedApps = data.filter(a => a.app_status === 'interviewing' || a.app_status === 'offer');
+      } catch (e) {}
+      this.archiveLoading = false;
+    },
+
+    async restoreProcess(app) {
+      await fetch(`/api/applications/${app.id}/restore`, { method: 'POST' });
+      this.archivedApps = this.archivedApps.filter(a => a.id !== app.id);
+      const res = await fetch('/api/interviewing');
+      const data = await res.json();
+      this.applications = data.map((a, i) => ({ ...a, _order: i + 1, _editing: false, _saving: false, _saved: false, _prepLoading: false, _prepQuestions: [], _showResearch: false }));
+    },
+
+    async permanentDeleteProcess(app) {
+      if (!confirm(`Permanently delete ${app.company_name || 'this process'}? This cannot be undone.`)) return;
+      await fetch(`/api/applications/${app.id}/permanent`, { method: 'DELETE' });
+      this.archivedApps = this.archivedApps.filter(a => a.id !== app.id);
+    },
+
+    async loadPrep(app) {
+      app._prepLoading = true;
+      try {
+        const res = await fetch(`/api/applications/${app.id}/interview-prep`, { method: 'POST' });
+        const data = await res.json();
+        app._prepQuestions = data.questions || [];
+      } catch(e) {}
+      app._prepLoading = false;
+    },
+
+    outcomeColor(val) { return OUTCOMES.find(o => o.value === val)?.color || '#c8cdd6'; },
+    outcomeLabel(val) { return OUTCOMES.find(o => o.value === val)?.label || val; },
+
+    // Timeline strip: same steps as the table, sorted by date (undated steps
+    // fall to the end so the actual progression stays chronological).
+    timelineSteps(app) {
+      return [...(app.steps || [])].sort((a, b) => {
+        if (a.step_date && b.step_date) return a.step_date.localeCompare(b.step_date);
+        if (a.step_date) return -1;
+        if (b.step_date) return 1;
+        return (a.sort_order || 0) - (b.sort_order || 0);
+      });
+    },
+    formatTimelineDate(iso) {
+      if (!iso) return '';
+      // "2025-03-14" → "Mar 14"
+      const d = new Date(iso + 'T00:00:00');
+      if (isNaN(d)) return iso;
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    },
+
+    jdItems(s) {
+      if (!s) return [];
+      const officeLabel = s.remote_policy === 'hybrid' && s.office_days
+        ? `Hybrid — ${s.office_days} day${s.office_days > 1 ? 's' : ''} in office`
+        : s.remote_policy;
+      return [
+        { icon: '📅', label: 'Experience', value: s.years_experience },
+        { icon: '📄', label: 'Contract',   value: s.contract_type },
+        { icon: '📍', label: 'Location',   value: s.location },
+        { icon: '🏠', label: 'Remote',     value: officeLabel },
+        { icon: '💰', label: 'Salary',     value: s.salary_range },
+        { icon: '✈️',  label: 'Visa',      value: s.visa_sponsorship },
+      ].filter(i => i.value && i.value !== 'null' && i.value !== 'not mentioned');
+    },
+
+    async updateStatus(app) {
+      await fetch(`/api/applications/${app.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: app.app_status }),
+      });
+    },
+
+    async saveDetails(app) {
+      await fetch(`/api/applications/${app.id}/details`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: app.company_name,
+          job_title: app.job_title,
+          referral_name: app.referral_name,
+          salary_asked: app.salary_asked,
+          interview_stage: app.interview_stage || null,
+        }),
+      });
+    },
+
+    // Toggle a card between "done" (read-only) and edit mode; save on finish.
+    toggleEdit(app) {
+      const wasEditing = app._editing;
+      app._editing = !app._editing;
+      if (wasEditing) { this.saveDetails(app); this.saveNotes(app); }
+    },
+
+    flagDefs: [
+      { key: 'urgent',    label: 'Urgent',               emoji: '🔺', bg: '#FCEBEB', color: '#A32D2D' },
+      { key: 'important', label: 'Important',            emoji: '⭐', bg: '#FAEEDA', color: '#854F0B' },
+      { key: 'on_hold',   label: 'On hold',              emoji: '⏸️', bg: '#F1EFE8', color: '#5F5E5A' },
+      { key: 'waiting',   label: 'Waiting for response', emoji: '⏳', bg: '#E6F1FB', color: '#185FA5' },
+      { key: 'my_action', label: 'Waiting for my action', emoji: '👉', bg: '#FAECE7', color: '#993C1D' },
+      { key: 'interview_scheduled', label: 'Next interview is scheduled', emoji: '📅', bg: '#E6F6EC', color: '#1E7A46' },
+      { key: 'dream_job', label: 'Dream Job',            emoji: '💎', bg: '#EEEDFE', color: '#534AB7' },
+    ],
+    hasFlag(app, key) {
+      return (app.flags || '').split(',').filter(Boolean).includes(key);
+    },
+    // In edit mode show every flag (to toggle); when locked show only active ones.
+    visibleFlags(app) {
+      return app._editing ? this.flagDefs : this.flagDefs.filter(d => this.hasFlag(app, d.key));
+    },
+    async toggleFlag(app, def) {
+      let arr = (app.flags || '').split(',').filter(Boolean);
+      arr = arr.includes(def.key) ? arr.filter(k => k !== def.key) : [...arr, def.key];
+      app.flags = arr.join(',');
+      await fetch(`/api/applications/${app.id}/details`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flags: app.flags }),
+      });
+    },
+
+    async saveNotes(app) {
+      app._saving = true;
+      await fetch(`/api/applications/${app.id}/process-notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: app.process_notes }),
+      });
+      app._saving = false; app._saved = true; setTimeout(() => { app._saved = false; }, 2000);
+    },
+
+    sortedSteps(app) {
+      return [...app.steps].sort((a, b) => {
+        if (!a.step_date) return 1;
+        if (!b.step_date) return -1;
+        return a.step_date < b.step_date ? -1 : a.step_date > b.step_date ? 1 : 0;
+      });
+    },
+
+    async addStep(app) {
+      const res = await fetch(`/api/applications/${app.id}/steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step_name: 'New step' }),
+      });
+      const step = await res.json();
+      app.steps.push(step);
+    },
+
+    async saveStep(step) {
+      await fetch(`/api/steps/${step.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step_name:   step.step_name,
+          step_date:   step.step_date,
+          interviewer: step.interviewer,
+          notes:       step.notes,
+          outcome:     step.outcome,
+        }),
+      });
+    },
+
+    async deleteStep(app, step) {
+      await fetch(`/api/steps/${step.id}`, { method: 'DELETE' });
+      app.steps = app.steps.filter(s => s.id !== step.id);
+    },
+  }
+}
+
+// ── Google Calendar scheduling ────────────────────────────────────────────────
+function openSchedule(app, step) {
+  const overlay = document.getElementById('scheduleModalOverlay');
+  const sub     = document.getElementById('scheduleModalSub');
+  const err     = document.getElementById('schError');
+
+  sub.textContent = app.company_name + ' - ' + app.job_title;
+  err.style.display = 'none';
+
+  document.getElementById('schSummary').value  = (step.step_name || '1st Interview') + ' - ' + app.company_name;
+  document.getElementById('schDate').value     = step.step_date || new Date().toISOString().slice(0,10);
+  document.getElementById('schTime').value     = '10:00';
+  document.getElementById('schDuration').value = '60';
+  document.getElementById('schNotes').value    = [
+    step.interviewer ? 'Interviewer: ' + step.interviewer : '',
+    app.job_title    ? 'Role: ' + app.job_title : '',
+    step.notes       || '',
+  ].filter(Boolean).join('\n');
+
+  overlay.style.display = 'flex';
+}
+
+function closeScheduleModal() {
+  document.getElementById('scheduleModalOverlay').style.display = 'none';
+}
+
+function submitSchedule() {
+  const err  = document.getElementById('schError');
+  const date = document.getElementById('schDate').value;
+  const time = document.getElementById('schTime').value;
+  const dur  = parseInt(document.getElementById('schDuration').value);
+
+  if (!date || !time) { err.textContent = 'Please set a date and time.'; err.style.display='block'; return; }
+  err.style.display = 'none';
+
+  const start = new Date(`${date}T${time}:00`);
+  const end   = new Date(start.getTime() + dur * 60000);
+  const fmt   = d => d.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: document.getElementById('schSummary').value,
+    dates: `${fmt(start)}/${fmt(end)}`,
+    details: document.getElementById('schNotes').value || '',
+  });
+  window.open(`https://calendar.google.com/calendar/render?${params}`, '_blank');
+  closeScheduleModal();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeScheduleModal();
+});
+</script>
+<script src="demo.js?v=10"></script>
+<script src="auth.js?v=5"></script>
+</body>
+</html>

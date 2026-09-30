@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Taylor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&family=Heebo:wght@300;400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link rel="stylesheet" href="style.css?v=72">
+<script src="localdb.js"></script>
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">Taylor<span class="brand-tagline" id="brandTagline">Yuvi's personal application tracker</span></span>
+  <div class="topnav-links">
+    <a href="index.html">Home</a>
+    <a href="index.html" class="gen-only">New Application</a>
+    
+    <a href="history.html" class="active">Applications</a>
+    <a href="interviewing.html">Interviewing</a>
+        <a href="stats.html">Stats</a>
+  </div>
+  <div class="topnav-right">
+    <div class="token-counter" id="tokenCounter" title="API cost this session">⚡ <span id="tcCalls">0</span> calls · <span class="tc-cost" id="tcCost">$0.000</span></div>
+    <div class="built-badge"><span class="badge-dot"></span><a href="https://www.linkedin.com/in/yuval-knobel-248ba2174" target="_blank" rel="noopener" class="built-badge-link"><strong>Yuval Knobel AI Ltd</strong></a></div>
+    <button class="tour-btn" onclick="startTour()">▶ Tour</button>
+  </div>
+</nav>
+<script>fetch("/api/config").then(r=>r.json()).then(c=>{if(!c.is_demo)return;document.querySelectorAll("*").forEach(el=>{el.childNodes.forEach(n=>{if(n.nodeType===3)n.textContent=n.textContent.replace(/Yuvi/g,c.display_name);});});});</script>
+
+<div class="layout" x-data="sidebarData()" x-init="init()">
+
+  <!-- ── Sidebar ───────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Applications</span>
+      <span class="sidebar-count" x-text="totalApps()"></span>
+    </div>
+    <div class="sidebar-loading" x-show="loading">Loading...</div>
+    <a href="history.html" class="sidebar-all active">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1.5H2zm0 3h12v1.5H2zm0 3h8v1.5H2z"/></svg>
+      All Applications
+    </a>
+    <div x-show="!loading" x-cloak>
+      <template x-for="cat in categories" :key="cat.id">
+        <div class="cat-group">
+          <div class="cat-header" @click="!editingCat[cat.id] && toggle(cat.id)">
+            <div class="cat-header-left" style="flex:1;min-width:0;">
+              <span class="cat-chevron" :class="expanded[cat.id] ? 'open' : ''">›</span>
+              <span class="cat-dot" :style="`background:${cat.color}`"></span>
+              <template x-if="!editingCat[cat.id]">
+                <span class="cat-name" x-text="cat.name"></span>
+              </template>
+              <template x-if="editingCat[cat.id]">
+                <input class="cat-rename-input" :value="cat.name"
+                       @click.stop
+                       @keydown.enter.stop="renameCategory(cat.id, $event.target.value)"
+                       @keydown.escape.stop="editingCat = {...editingCat, [cat.id]: false}"
+                       @blur="renameCategory(cat.id, $event.target.value)"
+                       x-init="$nextTick(() => $el.focus())">
+              </template>
+            </div>
+            <div class="cat-header-right">
+              <span class="cat-count" x-text="cat.applications.length"></span>
+              <button class="cat-edit" @click.stop="editingCat = {...editingCat, [cat.id]: true}" title="Rename">✎</button>
+              <button class="cat-delete" @click="deleteCategory(cat.id, $event)" title="Delete">×</button>
+            </div>
+          </div>
+          <div class="cat-apps" x-show="expanded[cat.id]" x-cloak>
+            <template x-if="cat.applications.length === 0">
+              <div class="cat-empty">Nothing here yet</div>
+            </template>
+            <template x-for="app in cat.applications" :key="app.id">
+              <div class="app-item" @click="filterByCompany(app.company_name)" style="cursor:pointer">
+                <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                <div class="app-info">
+                  <span class="app-company" x-text="app.company_name || 'Unknown'"></span>
+                  <span class="app-role" x-text="app.job_title || ''"></span>
+                </div>
+                <a x-show="appUrl(app)" :href="appUrl(app)" class="app-dl" download @click.stop>↓</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <template x-if="uncategorised.length > 0">
+        <div class="cat-group">
+          <div class="cat-header" @click="toggle('__uncategorised__')">
+            <div class="cat-header-left">
+              <span class="cat-chevron" :class="expanded['__uncategorised__'] ? 'open' : ''">›</span>
+              <span class="cat-dot" style="background:#d1d5db"></span>
+              <span class="cat-name">Unlabelled</span>
+            </div>
+            <span class="cat-count" x-text="uncategorised.length"></span>
+          </div>
+          <div class="cat-apps" x-show="expanded['__uncategorised__']" x-cloak>
+            <template x-for="app in uncategorised" :key="app.id">
+              <div class="app-item">
+                <span class="app-dot" :style="`background:${statusDot(app.app_status)}`"></span>
+                <div class="app-info">
+                  <span class="app-company" x-text="app.company_name || 'Unknown'"></span>
+                  <span class="app-role" x-text="app.job_title || ''"></span>
+                </div>
+                <a x-show="appUrl(app)" :href="appUrl(app)" class="app-dl" download>↓</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <div class="add-cat-row">
+        <div x-show="!showNewCat">
+          <button class="btn-add-cat" @click="showNewCat=true">+ New label</button>
+        </div>
+        <div x-show="showNewCat" x-cloak class="new-cat-form">
+          <input class="new-cat-input" x-model="newCatName" placeholder="Label name"
+                 @keydown.enter="addCategory()" @keydown.escape="showNewCat=false">
+          <button class="btn btn-sm btn-primary" @click="addCategory()">Add</button>
+          <button class="btn btn-sm btn-ghost" @click="showNewCat=false">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main content ──────────────────────────────────────────────────── -->
+  <main x-data="historyPage()" x-init="init()" class="main-content">
+    <div class="main-inner" style="max-width:1100px">
+
+    <div class="history-toolbar">
+      <h1>Applications</h1>
+      <div class="history-filters">
+        <button class="btn btn-sm btn-ghost" @click="exportCsv()" title="Export all applications as CSV">⬇ Export CSV</button>
+        <input class="search-input" x-model="search" @input="refilter()" placeholder="Search company or role...">
+        <button class="btn btn-delete btn-sm" x-show="selectedIds.length > 0" x-cloak
+                @click="bulkDelete()"
+                x-text="`🗑 Archive (${selectedIds.length})`"></button>
+
+        <button class="btn btn-primary btn-sm" @click="openAddAppModal({ onCreated: () => location.reload() })">+ Track a new application</button>
+      </div>
+    </div>
+
+    <!-- Filter pills: two rows -->
+    <div x-show="!loading" x-cloak>
+      <!-- Row 1: Status -->
+      <div class="label-filter-row">
+        <span class="filter-group-label">Status</span>
+        <template x-for="s in statuses" :key="s.value">
+          <button type="button"
+            class="label-filter-pill"
+            :class="filterStatus === s.value ? 'label-filter-pill-active' : ''"
+            :style="filterStatus === s.value ? `background:${s.color}22; border-color:${s.color}; color:${s.color}` : `border-color:${s.color}55`"
+            @click="filterStatus = filterStatus === s.value ? '' : s.value; refilter()">
+            <span class="label-pill-dot" :style="`background:${s.color}`"></span>
+            <span x-text="s.label"></span>
+          </button>
+        </template>
+        <button x-show="filterStatus" type="button" class="label-filter-clear" @click="filterStatus=''; refilter()">✕</button>
+      </div>
+      <!-- Row 2: Labels -->
+      <div class="label-filter-row" x-show="allCategories.length > 0" style="border-top:none">
+        <span class="filter-group-label">Labels</span>
+        <template x-for="cat in allCategories" :key="cat.id">
+          <button type="button"
+            class="label-filter-pill label-filter-pill-tag"
+            :class="filterLabels.includes(cat.id) ? 'label-filter-pill-active' : ''"
+            :style="filterLabels.includes(cat.id) ? `background:${cat.color}22; border-color:${cat.color}; color:${cat.color}` : `border-color:${cat.color}55`"
+            @click="filterLabels = filterLabels.includes(cat.id) ? filterLabels.filter(x=>x!==cat.id) : [...filterLabels, cat.id]; refilter()">
+            <span class="label-pill-dot" :style="`background:${cat.color}`"></span>
+            <span x-text="cat.name"></span>
+          </button>
+        </template>
+        <button x-show="filterLabels.length > 0" type="button" class="label-filter-clear" @click="filterLabels=[]; refilter()">✕</button>
+      </div>
+    </div>
+
+    <div class="loading-box" x-show="loading" x-cloak>
+      <div class="spinner"></div><p>Loading your applications...</p>
+    </div>
+
+    <div class="empty-state" x-show="!loading && filteredApps.length === 0" x-cloak>
+      <p x-show="applications.length === 0">Nothing here yet. Log the first role you applied to and it'll show up here.</p>
+      <p x-show="applications.length > 0 && filteredApps.length === 0">No applications match that filter.</p>
+      <div style="margin-top:14px" x-show="applications.length === 0">
+        <button type="button" class="btn btn-primary" @click="openAddAppModal({ onCreated: () => location.reload() })">+ Track a new application</button>
+      </div>
+      <a href="index.html" class="btn btn-primary gen-only" x-show="applications.length === 0">Tailor your first CV</a>
+    </div>
+
+    <table class="history-table" x-show="!loading && filteredApps.length > 0" x-cloak>
+      <thead>
+        <tr>
+          <th style="width:28px">
+            <input type="checkbox" class="row-checkbox"
+                   :checked="selectedIds.length === filteredApps.length && filteredApps.length > 0"
+                   @change="toggleSelectAll($event.target.checked)">
+          </th>
+          <th style="width:28px"></th>
+          <th @click="setSort('company_name')" class="sortable-th">
+            Company <span class="sort-arrow" x-text="sortArrow('company_name')"></span>
+          </th>
+          <th @click="setSort('job_title')" class="sortable-th">
+            Role <span class="sort-arrow" x-text="sortArrow('job_title')"></span>
+          </th>
+          <th>Referral</th>
+          <th @click="setSort('created_at')" class="sortable-th">
+            Date <span class="sort-arrow" x-text="sortArrow('created_at')"></span>
+          </th>
+          <th @click="setSort('app_status')" class="sortable-th">
+            Status <span class="sort-arrow" x-text="sortArrow('app_status')"></span>
+          </th>
+          <th>Reason</th>
+          <th>Stage</th>
+          <th>CV</th>
+        </tr>
+      </thead>
+      <template x-for="app in filteredApps" :key="app.id">
+          <tbody>
+          <tr :class="editingId === app.id ? 'row-editing' : (selectedIds.includes(app.id) ? 'row-selected' : '')">
+            <td>
+              <input type="checkbox" class="row-checkbox"
+                     :checked="selectedIds.includes(app.id)"
+                     @change="toggleSelect(app.id, $event.target.checked)">
+            </td>
+            <td class="edit-col">
+              <button class="row-edit-btn"
+                      :class="editingId === app.id ? 'row-edit-btn-active' : ''"
+                      @click="editingId = editingId === app.id ? null : app.id"
+                      :title="editingId === app.id ? 'Done editing' : 'Edit row'">
+                <span x-text="editingId === app.id ? '✓' : '✏️'"></span>
+              </button>
+            </td>
+            <td>
+              <span x-show="editingId !== app.id" class="cell-text" x-text="app.company_name || '—'"></span>
+              <input x-show="editingId === app.id" class="table-inline-input" type="text"
+                     x-model="app.company_name"
+                     @blur="saveDetail(app, 'company_name', app.company_name)"
+                     placeholder="Company">
+            </td>
+            <td>
+              <span x-show="editingId !== app.id" class="cell-text" x-text="app.job_title || '—'"></span>
+              <input x-show="editingId === app.id" class="table-inline-input" type="text"
+                     x-model="app.job_title"
+                     @blur="saveDetail(app, 'job_title', app.job_title)"
+                     placeholder="Role">
+            </td>
+            <td>
+              <span x-show="editingId !== app.id" class="cell-text" x-text="app.referral_name || '—'"></span>
+              <input x-show="editingId === app.id" class="table-inline-input" type="text"
+                     x-model="app.referral_name"
+                     @blur="saveDetail(app, 'referral_name', app.referral_name)"
+                     placeholder="—">
+            </td>
+            <td style="white-space:nowrap;">
+              <span x-show="editingId !== app.id" class="cell-text" x-text="formatDate(app.created_at)"></span>
+              <input x-show="editingId === app.id" class="table-inline-input" type="date"
+                     :value="toDateInput(app.created_at)"
+                     @change="app.created_at = $event.target.value; saveDetail(app, 'created_at', $event.target.value)">
+            </td>
+            <td class="status-col">
+              <!-- Inline status picker -->
+              <div class="status-cell">
+                <select class="stage-select" :class="'status-sel-' + app.app_status"
+                        @change="updateStatus(app, $event.target.value)">
+                  <option value="generated"    :selected="app.app_status === 'generated'">Generated</option>
+                  <option value="sent"         :selected="app.app_status === 'sent'">Sent</option>
+                  <option value="interviewing" :selected="app.app_status === 'interviewing'">Interviewing</option>
+                  <option value="offer"        :selected="app.app_status === 'offer'">Offer</option>
+                  <option value="rejected"     :selected="app.app_status === 'rejected'">Rejected</option>
+                </select>
+              </div>
+            </td>
+            <td class="reason-col" x-data="{ isOther: !!app.rejection_reason && !REJECT_REASONS.includes(app.rejection_reason) }">
+              <!-- Rejection reason: only relevant when the row is rejected -->
+              <template x-if="app.app_status === 'rejected'">
+                <div>
+                  <select class="stage-select"
+                          @change="if ($event.target.value === '__other__') { isOther = true; app.rejection_reason = ''; }
+                                   else { isOther = false; app.rejection_reason = $event.target.value; saveDetail(app, 'rejection_reason', $event.target.value || null); }">
+                    <option value="" :selected="!app.rejection_reason && !isOther">Pick a reason...</option>
+                    <template x-for="r in REJECT_REASONS" :key="r">
+                      <option :value="r" :selected="app.rejection_reason === r" x-text="r"></option>
+                    </template>
+                    <option value="__other__" :selected="isOther">Other (write your own)</option>
+                  </select>
+                  <input x-show="isOther" x-cloak class="table-inline-input" type="text" style="margin-top:4px;"
+                         x-model="app.rejection_reason"
+                         @blur="saveDetail(app, 'rejection_reason', app.rejection_reason || null)"
+                         placeholder="Type a reason...">
+                </div>
+              </template>
+              <span x-show="app.app_status !== 'rejected'" class="cell-text" style="color:var(--muted)">—</span>
+            </td>
+            <td class="stage-col">
+              <!-- Inline stage picker -->
+              <select class="stage-select"
+        
+                      @change="app.interview_stage = $event.target.value; saveDetail(app, 'interview_stage', $event.target.value || null)">
+                <option value="" :selected="!app.interview_stage">—</option>
+                <option value="CV Sent"       :selected="app.interview_stage === 'CV Sent'">CV Sent</option>
+                <option value="Phone Screen"  :selected="app.interview_stage === 'Phone Screen'">Phone Screen</option>
+                <option value="1st Interview" :selected="app.interview_stage === '1st Interview'">1st Interview</option>
+                <option value="2nd Interview" :selected="app.interview_stage === '2nd Interview'">2nd Interview</option>
+                <option value="3rd Interview" :selected="app.interview_stage === '3rd Interview'">3rd Interview</option>
+                <option value="Final Round"   :selected="app.interview_stage === 'Final Round'">Final Round</option>
+                <option value="Offer"         :selected="app.interview_stage === 'Offer'">Offer</option>
+              </select>
+            </td>
+            <td style="white-space:nowrap;vertical-align:middle;">
+              <div style="display:flex;align-items:center;gap:4px;">
+                <button @click="openPreview(app)"
+                  :style="app.output_cv_path ? '' : 'visibility:hidden'"
+                  class="btn btn-sm btn-secondary" title="Preview CV">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>CV
+                </button>
+                <input type="file" accept=".pdf" :id="`cv-replace-${app.id}`" style="display:none" @change="replaceCv(app, $event.target.files[0])">
+                <button class="btn btn-sm btn-secondary" title="Replace CV" @click="document.getElementById(`cv-replace-${app.id}`).click()">↑</button>
+              </div>
+            </td>
+          </tr>
+          <!-- Category row (shown when editing) -->
+          <tr x-show="editingId === app.id" class="cat-edit-row">
+            <td colspan="10">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span class="cat-pills-label" style="margin-bottom:0;white-space:nowrap;">Labels:</span>
+              <div class="cat-pills-row" style="flex:1;">
+                <template x-for="cat in allCategories" :key="cat.id">
+                  <button type="button"
+                          class="cat-pill"
+                          :class="appCatIds(app).includes(cat.id) ? 'cat-pill-on' : ''"
+                          :style="appCatIds(app).includes(cat.id) ? `background:${cat.color}22; border-color:${cat.color}; color:${cat.color}` : ''"
+                          @click="toggleAppCat(app, cat)">
+                    <span class="cat-pill-dot" :style="`background:${cat.color}`"></span>
+                    <span x-text="cat.name"></span>
+                  </button>
+                </template>
+              </div>
+              </div>
+            </td>
+          </tr>
+          </tbody>
+        </template>
+    </table>
+
+    <!-- Schedule interview modal -->
+    <div class="modal-overlay" x-show="scheduleModal.open" x-cloak @click.self="scheduleModal.open=false">
+      <div class="modal" style="max-width:480px">
+        <div class="modal-header" style="position:relative">
+          <h2>📅 Schedule interview</h2>
+          <p x-text="scheduleModal.app ? scheduleModal.app.company_name + ' — ' + scheduleModal.app.job_title : ''"></p>
+          <button class="modal-close-x" @click="scheduleModal.open=false">✕</button>
+        </div>
+
+        <div>
+          <div class="field">
+            <label>Event title</label>
+            <input type="text" x-model="scheduleModal.summary" class="input" placeholder="e.g. Interview at Wix">
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Type</label>
+              <select x-model="scheduleModal.type" class="input" @change="scheduleModal.summary = scheduleModal.type + ' - ' + (scheduleModal.app ? scheduleModal.app.company_name : '')">
+                <option>Phone Screen</option>
+                <option>1st Interview</option>
+                <option>2nd Interview</option>
+                <option>3rd Interview</option>
+                <option>Final Round</option>
+                <option>Offer Call</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Duration</label>
+              <select x-model="scheduleModal.duration" class="input">
+                <option value="30">30 min</option>
+                <option value="45">45 min</option>
+                <option value="60" selected>1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Date</label>
+              <input type="date" x-model="scheduleModal.date" class="input">
+            </div>
+            <div class="field">
+              <label>Time</label>
+              <input type="time" x-model="scheduleModal.time" class="input">
+            </div>
+          </div>
+          <div class="field">
+            <label>Notes <span class="label-optional">optional</span></label>
+            <textarea x-model="scheduleModal.notes" rows="3" class="input" placeholder="Interviewer name, prep notes, Zoom link…"></textarea>
+          </div>
+
+          <div x-show="scheduleModal.error" x-cloak style="color:#dc2626;font-size:13px;margin-bottom:8px;" x-text="scheduleModal.error"></div>
+
+          <div class="modal-footer">
+            <button class="btn btn-primary" @click="submitSchedule()">Open in Google Calendar ↗</button>
+            <button class="btn btn-ghost" @click="scheduleModal.open=false">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Archive section -->
+    <div style="margin-top:32px;padding:0 40px 40px;">
+      <button class="btn btn-ghost btn-sm" @click="loadArchive()"
+              style="font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+        <span x-text="showArchive ? '▾' : '▸'"></span>
+        <span>Archive</span>
+        <span x-show="archivedApps.length > 0" x-cloak
+              style="background:var(--border);border-radius:10px;padding:1px 7px;font-size:11px;"
+              x-text="archivedApps.length"></span>
+      </button>
+
+      <div x-show="showArchive" x-cloak style="margin-top:12px;">
+        <div x-show="archiveLoading" style="font-size:13px;color:var(--muted);padding:12px 0;">Loading...</div>
+        <div x-show="!archiveLoading && archivedApps.length === 0" style="font-size:13px;color:var(--muted);padding:12px 0;">No archived applications.</div>
+        <template x-for="app in archivedApps" :key="app.id">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--card-bg);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;gap:12px;">
+            <div>
+              <div style="font-weight:600;font-size:14px;" x-text="app.company_name || 'Unknown'"></div>
+              <div style="font-size:12px;color:var(--muted);" x-text="app.job_title || ''"></div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;" x-text="app.created_at ? new Date(app.created_at).toLocaleDateString() : ''"></div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" @click="restoreApp(app)" style="white-space:nowrap;font-size:12px;">↩ Restore</button>
+              <button class="btn btn-delete btn-sm" @click="permanentDelete(app)" style="white-space:nowrap;font-size:12px;">🗑 Delete</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Upload finished CV modal -->
+    <div class="modal-overlay" x-show="showUpload" x-cloak @click.self="uploadStep===1 && (showUpload=false)">
+      <div class="modal">
+
+        <!-- Step 1: CV details -->
+        <template x-if="uploadStep === 1">
+          <div>
+            <div class="modal-header">
+              <h2>Upload a finished CV</h2>
+              <p>Add a past application directly - no tailoring needed.</p>
+            </div>
+            <div class="field">
+              <label>Company name</label>
+              <input type="text" x-model="upload.company" placeholder="e.g. Google">
+            </div>
+            <div class="field">
+              <label>Role / Job title</label>
+              <input type="text" x-model="upload.jobTitle" placeholder="e.g. Head of Operations">
+            </div>
+            <div class="field">
+              <label>Referred by <span class="label-optional">optional</span></label>
+              <input type="text" x-model="upload.referralName" placeholder="Name of the person who referred you">
+            </div>
+            <div class="field">
+              <label>Status</label>
+              <div class="custom-select-wrap" x-data="{ open: false }" @click.outside="open=false">
+                <button class="custom-select-btn" @click="open=!open">
+                  <span class="status-option-label">
+                    <span class="sdot" :style="`background:${statusColor(upload.status)}`"></span>
+                    <span x-text="statusLabel(upload.status)"></span>
+                  </span>
+                  <span class="select-chevron">›</span>
+                </button>
+                <div class="custom-select-menu" x-show="open" x-cloak>
+                  <template x-for="s in statuses" :key="s.value">
+                    <div class="custom-select-option" @click="upload.status=s.value; open=false">
+                      <span class="sdot" :style="`background:${s.color}`"></span>
+                      <span x-text="s.label"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label>CV file (PDF)</label>
+              <div class="drop-zone"
+                   :class="{ 'drop-zone-over': upload._drag, 'drop-zone-done': upload.file }"
+                   @dragover.prevent="upload._drag=true"
+                   @dragleave.prevent="upload._drag=false"
+                   @drop.prevent="upload._drag=false; upload.file=$event.dataTransfer.files[0]"
+                   @click="$refs.cvFileInput.click()">
+                <template x-if="!upload.file">
+                  <div class="drop-zone-inner">
+                    <span class="drop-zone-icon">📄</span>
+                    <span class="drop-zone-text">Drop PDF here or <u>click to browse</u></span>
+                  </div>
+                </template>
+                <template x-if="upload.file">
+                  <div class="drop-zone-inner">
+                    <span class="drop-zone-icon">✅</span>
+                    <span class="drop-zone-text" x-text="upload.file.name"></span>
+                    <button class="drop-zone-clear" @click.stop="upload.file=null">✕</button>
+                  </div>
+                </template>
+              </div>
+              <input type="file" accept=".pdf" x-ref="cvFileInput" style="display:none"
+                     @change="upload.file=$event.target.files[0]">
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-primary" @click="submitUpload()" :disabled="upload.saving || !upload.file">
+                <span x-show="!upload.saving">Next: Add labels</span>
+                <span x-show="upload.saving" x-cloak><span class="spinner-sm"></span> Saving...</span>
+              </button>
+              <button class="btn btn-ghost" @click="showUpload=false">Cancel</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Step 2: Label picker -->
+        <template x-if="uploadStep === 2">
+          <div>
+            <div class="modal-header" style="position:relative">
+              <h2>Where does this one belong?</h2>
+              <p>Optional - pick the labels that fit, or save without them.</p>
+              <button class="modal-close-x" @click="finishUpload(true)" title="Close">✕</button>
+            </div>
+            <div class="modal-cats">
+              <template x-for="cat in allCategories" :key="cat.id">
+                <label class="cat-checkbox">
+                  <input type="checkbox" :value="cat.id" x-model="uploadSelectedCatIds">
+                  <span class="cat-dot-sm" :style="`background:${cat.color}`"></span>
+                  <span x-text="cat.name"></span>
+                </label>
+              </template>
+              <div x-show="allCategories.length === 0" class="cat-empty-hint">
+                You haven't created any labels yet - add them from the sidebar.
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-primary" @click="finishUpload(false)" :disabled="upload.savingCats">
+                <span x-show="!upload.savingCats">Save &amp; done</span>
+                <span x-show="upload.savingCats" x-cloak><span class="spinner-sm"></span> Saving...</span>
+              </button>
+              <button class="btn btn-ghost" @click="finishUpload(true)">Save without labels</button>
+            </div>
+          </div>
+        </template>
+
+      </div>
+    </div>
+
+    <!-- Toast notification — must stay inside the x-data scope above (toast
+         is a property of historyPage(), not a global) or Alpine throws
+         "toast is not defined" on every load. -->
+    <div x-show="toast.show" x-cloak x-text="toast.msg"
+         style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+                background:#1e1e2e;color:#fff;padding:10px 20px;border-radius:20px;
+                font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.25);
+                pointer-events:none;white-space:nowrap;">
+    </div>
+
+    </div><!-- /.main-inner -->
+  </main>
+</div>
+
+<!-- ── PDF Preview Drawer ───────────────────────────────────────────────── -->
+<div id="pdfDrawer" style="
+  position:fixed; bottom:0; left:0; right:0; z-index:1000;
+  height:0; transition:height 0.3s ease;
+  background:#1e1e2e; display:flex; flex-direction:column;
+  box-shadow:0 -4px 24px rgba(0,0,0,0.25);
+">
+  <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;">
+    <span id="pdfDrawerTitle" style="font-weight:600;color:#fff;font-size:13px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
+    <a id="pdfDrawerNewTab" href="#" target="_blank"
+       style="font-size:12px;padding:4px 12px;background:rgba(255,255,255,0.1);color:#fff;border-radius:6px;text-decoration:none;border:1px solid rgba(255,255,255,0.2);">
+      ↗ New tab
+    </a>
+    <a id="pdfDrawerDownload" href="#" download
+       style="font-size:12px;padding:4px 12px;background:rgba(255,255,255,0.1);color:#fff;border-radius:6px;text-decoration:none;border:1px solid rgba(255,255,255,0.2);">
+      ⬇ Download
+    </a>
+    <button onclick="closePdfDrawer()" style="background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">✕</button>
+  </div>
+  <iframe id="pdfDrawerFrame" src="" style="flex:1;border:none;background:#525659;"></iframe>
+</div>
+
+<script src="sidebar.js?v=2"></script>
+<script>
+
+const STATUSES = [
+  { value: 'interviewing', label: 'Interviewing', color: '#7dc4a0' },
+  { value: 'offer',        label: 'Offer',        color: '#b09de8' },
+  { value: 'sent',         label: 'Sent',         color: '#f5a86a' },
+  { value: 'generated',    label: 'Generated',    color: '#f5d47a' },
+  { value: 'rejected',     label: 'Rejected',     color: '#f59ab0' },
+];
+
+// Prepared rejection reasons (plus an "Other" free-text option in the table).
+const REJECT_REASONS = [
+  'Position filled',
+  'Position was cancelled',
+  'Not enough experience',
+  'Overqualified',
+  'Salary mismatch',
+  'Went with another candidate',
+  'Ghosted / no response',
+  'I withdrew',
+  'Did not share a reason',
+];
+
+function historyPage() {
+  return {
+    applications: [],
+    archivedApps: [],
+    showArchive: false,
+    archiveLoading: false,
+    loading: true,
+    search: '',
+    filterStatus: '',
+    filterCompany: '',
+    filterLabels: [],
+    _filterTick: 0,
+    editingId: null,
+    selectedIds: [],
+    sortField: 'app_status',
+    sortDir: 'asc',
+    statuses: STATUSES,
+    interviewStages: ['CV Sent', 'Phone Screen', '1st Interview', '2nd Interview', '3rd Interview', 'Final Round', 'Offer'],
+    allCategories: [],
+    appCategories: {},
+
+    toast: { show: false, msg: '' },
+    showUpload: false,
+    uploadStep: 1,
+    uploadAppId: null,
+    uploadSelectedCatIds: [],
+    upload: { company: '', jobTitle: '', referralName: '', status: 'sent', file: null, saving: false, savingCats: false, _drag: false },
+
+    scheduleModal: {
+      open: false, app: null, summary: '', type: 'Interview',
+      date: '', time: '10:00', duration: '60', notes: '',
+      saving: false, error: '', success: false, eventUrl: '',
+    },
+
+    filteredApps: [],
+
+    refilter() {
+      const filtered = this.applications.filter(a => {
+        const q = this.search.toLowerCase();
+        const matchSearch = !q ||
+          (a.company_name || '').toLowerCase().includes(q) ||
+          (a.job_title || '').toLowerCase().includes(q);
+        const matchStatus = !this.filterStatus || a.app_status === this.filterStatus;
+        const matchCompany = !this.filterCompany || a.company_name === this.filterCompany;
+        const matchLabels = !this.filterLabels.length ||
+          (a.category_ids || []).some(id => this.filterLabels.includes(id));
+        return matchSearch && matchStatus && matchCompany && matchLabels;
+      });
+      const f = this.sortField, dir = this.sortDir === 'asc' ? 1 : -1;
+      const statusOrder = STATUSES.map(s => s.value);
+      this.filteredApps = [...filtered].sort((a, b) => {
+        if (f === 'app_status') {
+          const ai = statusOrder.indexOf(a.app_status);
+          const bi = statusOrder.indexOf(b.app_status);
+          return (ai - bi) * dir;
+        }
+        const av = (a[f] || '').toLowerCase();
+        const bv = (b[f] || '').toLowerCase();
+        return av < bv ? -dir : av > bv ? dir : 0;
+      });
+    },
+
+    setSort(field) {
+      if (this.sortField === field) {
+        this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        this.sortField = field;
+        this.sortDir = field === 'created_at' ? 'desc' : 'asc';
+      }
+      this.refilter();
+    },
+
+    sortArrow(field) {
+      if (this.sortField !== field) return '↕';
+      return this.sortDir === 'asc' ? '↑' : '↓';
+    },
+
+    async init() {
+      const [appsRes, catsRes] = await Promise.all([
+        fetch('/api/history'),
+        fetch('/api/categories'),
+      ]);
+      this.applications = await appsRes.json();
+      const catsData = await catsRes.json();
+      this.allCategories = catsData;
+      // Build appCategories map from sidebar data
+      for (const cat of catsData) {
+        for (const app of (cat.applications || [])) {
+          if (!this.appCategories[app.id]) this.appCategories[app.id] = [];
+          this.appCategories[app.id].push(cat.id);
+        }
+      }
+      this.loading = false;
+      this.refilter();
+      document.addEventListener('filter-company', (e) => {
+        this.filterCompany = this.filterCompany === e.detail ? '' : e.detail;
+        this.refilter();
+      });
+    },
+
+    openSchedule(app) {
+      const today = new Date().toISOString().slice(0, 10);
+      this.scheduleModal = {
+        open: true, app,
+        summary: (app.interview_stage || '1st Interview') + ' — ' + app.company_name,
+        type: app.interview_stage || '1st Interview',
+        date: today, time: '10:00', duration: '60',
+        notes: app.job_title ? `Role: ${app.job_title}` : '',
+        saving: false, error: '', success: false, eventUrl: '',
+      };
+    },
+
+    submitSchedule() {
+      const m = this.scheduleModal;
+      if (!m.date || !m.time) { m.error = 'Please set a date and time.'; return; }
+      const start = new Date(`${m.date}T${m.time}:00`);
+      const end   = new Date(start.getTime() + parseInt(m.duration) * 60000);
+      const fmt   = d => d.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+      const params = new URLSearchParams({
+        action: 'TEMPLATE',
+        text: m.summary,
+        dates: `${fmt(start)}/${fmt(end)}`,
+        details: m.notes || '',
+      });
+      window.open(`https://calendar.google.com/calendar/render?${params}`, '_blank');
+      this.scheduleModal.open = false;
+    },
+
+    appCatIds(app) {
+      return app.category_ids || this.appCategories[app.id] || [];
+    },
+
+    async toggleAppCat(app, cat) {
+      const current = this.appCatIds(app);
+      const has = current.includes(cat.id);
+      if (has) {
+        await fetch(`/api/applications/${app.id}/categories?category_id=${cat.id}`, {
+          method: 'DELETE',
+        });
+        this.appCategories[app.id] = current.filter(id => id !== cat.id);
+      } else {
+        await fetch(`/api/applications/${app.id}/categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category_id: cat.id }),
+        });
+        this.appCategories[app.id] = [...current, cat.id];
+      }
+      // Keep category_ids on the app object in sync so filteredApps getter reacts
+      app.category_ids = [...this.appCategories[app.id]];
+      this.appCategories = { ...this.appCategories };
+    },
+
+    statusColor(val) {
+      return STATUSES.find(s => s.value === val)?.color || '#c8cdd6';
+    },
+
+    statusLabel(val) {
+      return STATUSES.find(s => s.value === val)?.label || val;
+    },
+
+    async updateStatus(app, status) {
+      app.app_status = status;
+      await fetch(`/api/applications/${app.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+    },
+
+    async replaceCv(app, file) {
+      if (!file) return;
+      app._cvUploading = true; app._cvDone = false;
+      const fd = new FormData();
+      fd.append('cv_file', file);
+      const res = await fetch(`/api/applications/${app.id}/replace-cv`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.output_cv_path) app.output_cv_path = data.output_cv_path;
+      app._cvUploading = false; app._cvDone = true;
+      setTimeout(() => { app._cvDone = false; }, 3000);
+    },
+
+    toggleSelect(id, checked) {
+      if (checked) {
+        if (!this.selectedIds.includes(id)) this.selectedIds = [...this.selectedIds, id];
+      } else {
+        this.selectedIds = this.selectedIds.filter(x => x !== id);
+      }
+    },
+
+    toggleSelectAll(checked) {
+      this.selectedIds = checked ? this.filteredApps.map(a => a.id) : [];
+    },
+
+    exportCsv() {
+      const cols = ['Company', 'Role', 'Status', 'Stage', 'Fit Score', 'Referral', 'Salary Asked', 'Date'];
+      const rows = this.filteredApps.map(a => [
+        a.company_name || '',
+        a.job_title || '',
+        a.app_status || '',
+        a.interview_stage || '',
+        a.fit_score || '',
+        a.referral_name || '',
+        a.salary_asked || '',
+        (a.created_at || '').slice(0, 10),
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+      const csv = [cols.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `applications-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    },
+
+    async bulkDelete() {
+      const n = this.selectedIds.length;
+      if (!confirm(`Archive ${n} application${n > 1 ? 's' : ''}? You can restore them later from the Archive section.`)) return;
+      const archived = this.applications.filter(a => this.selectedIds.includes(a.id));
+      await Promise.all(this.selectedIds.map(id => fetch(`/api/applications/${id}`, { method: 'DELETE' })));
+      this.applications = this.applications.filter(a => !this.selectedIds.includes(a.id));
+      if (this.showArchive) {
+        this.archivedApps = [...archived.map(a => ({ ...a, archived: 1 })), ...this.archivedApps];
+      }
+      this.selectedIds = [];
+      this.editingId = null;
+      this.refilter();
+      this.showToast(`🗂 ${n} application${n > 1 ? 's' : ''} archived`);
+    },
+
+    async deleteApp(app) {
+      const label = app.company_name || 'this application';
+      if (!confirm(`Archive ${label}? You can restore it later from the Archive section.`)) return;
+      await fetch(`/api/applications/${app.id}`, { method: 'DELETE' });
+      this.applications = this.applications.filter(a => a.id !== app.id);
+      this.selectedIds = this.selectedIds.filter(x => x !== app.id);
+      this.editingId = null;
+      if (this.showArchive) {
+        this.archivedApps = [{ ...app, archived: 1 }, ...this.archivedApps];
+      }
+      this.refilter();
+      this.showToast(`🗂 ${label} archived`);
+    },
+
+    async loadArchive() {
+      this.showArchive = !this.showArchive;
+      if (!this.showArchive) return;
+      this.archiveLoading = true;
+      const res = await fetch('/api/applications/archived');
+      this.archivedApps = await res.json();
+      this.archiveLoading = false;
+    },
+
+    showToast(msg) {
+      this.toast = { show: true, msg };
+      setTimeout(() => { this.toast.show = false; }, 3000);
+    },
+
+    async permanentDelete(app) {
+      const label = app.company_name || 'this application';
+      if (!confirm(`Permanently delete ${label}? This cannot be undone.`)) return;
+      await fetch(`/api/applications/${app.id}/permanent`, { method: 'DELETE' });
+      this.archivedApps = this.archivedApps.filter(a => a.id !== app.id);
+      this.showToast(`🗑 ${label} permanently deleted`);
+    },
+
+    async restoreApp(app) {
+      await fetch(`/api/applications/${app.id}/restore`, { method: 'POST' });
+      this.archivedApps = this.archivedApps.filter(a => a.id !== app.id);
+      const res = await fetch('/api/history');
+      this.applications = await res.json();
+      this.refilter();
+      this.showToast(`↩ ${app.company_name || 'Entry'} restored`);
+    },
+
+    async saveDetail(app, field, value) {
+      await fetch(`/api/applications/${app.id}/details`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      });
+    },
+
+    async submitUpload() {
+      if (!this.upload.file) return;
+      this.upload.saving = true;
+      const fd = new FormData();
+      fd.append('cv_file', this.upload.file);
+      fd.append('company_name', this.upload.company);
+      fd.append('job_title', this.upload.jobTitle);
+      fd.append('app_status', this.upload.status);
+      const res2 = await fetch('/api/applications/upload-finished', { method: 'POST', body: fd });
+      const { application_id } = await res2.json();
+      if (this.upload.referralName && application_id) {
+        await fetch(`/api/applications/${application_id}/details`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ referral_name: this.upload.referralName }),
+        });
+      }
+      // Refresh list in background, then go to label step
+      const res = await fetch('/api/history');
+      this.applications = await res.json();
+      this.uploadAppId = application_id;
+      this.uploadSelectedCatIds = [];
+      this.upload.saving = false;
+      this.uploadStep = 2;
+    },
+
+    async finishUpload(skip) {
+      if (!skip && this.uploadSelectedCatIds.length && this.uploadAppId) {
+        this.upload.savingCats = true;
+        await fetch(`/api/applications/${this.uploadAppId}/categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category_ids: this.uploadSelectedCatIds }),
+        });
+        this.upload.savingCats = false;
+        // Update local appCategories so labels show immediately
+        this.appCategories[this.uploadAppId] = this.allCategories.filter(c => this.uploadSelectedCatIds.includes(c.id));
+      }
+      this.showUpload = false;
+      this.uploadStep = 1;
+      this.uploadAppId = null;
+      this.uploadSelectedCatIds = [];
+      this.upload = { company: '', jobTitle: '', referralName: '', status: 'sent', file: null, saving: false, savingCats: false, _drag: false };
+      const res = await fetch('/api/history');
+      this.applications = await res.json();
+      this.showToast('✅ CV added to your Database!');
+    },
+
+    formatDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    },
+
+    toDateInput(iso) {
+      if (!iso) return '';
+      return new Date(iso).toISOString().slice(0, 10);
+    },
+
+    filename(path) {
+      if (!path) return '';
+      return path.split('/').pop();
+    },
+
+    openPreview(app) {
+      // output_cv_path is already a blob: URL (resolved by localdb.js's
+      // fetch shim) — it works directly as both the iframe src and the
+      // download href, no server-side view/download routes needed.
+      if (!app.output_cv_path) return;
+      const label = `${app.company_name || 'CV'} — ${app.job_title || ''}`;
+      openPdfDrawer(app.output_cv_path, app.output_cv_path, label);
+    },
+  }
+}
+
+function openPdfDrawer(viewUrl, dlUrl, title) {
+  const drawer   = document.getElementById('pdfDrawer');
+  const frame    = document.getElementById('pdfDrawerFrame');
+  const titleEl  = document.getElementById('pdfDrawerTitle');
+  const newTab   = document.getElementById('pdfDrawerNewTab');
+  const download = document.getElementById('pdfDrawerDownload');
+  titleEl.textContent = title || 'CV Preview';
+  newTab.href   = viewUrl;
+  download.href = dlUrl;
+  frame.src     = viewUrl;
+  drawer.style.height = '70vh';
+  // Push page content up so it's not hidden under drawer
+  document.querySelector('.layout').style.paddingBottom = 'calc(70vh + 8px)';
+}
+
+function closePdfDrawer() {
+  const drawer = document.getElementById('pdfDrawer');
+  drawer.style.height = '0';
+  document.getElementById('pdfDrawerFrame').src = '';
+  document.querySelector('.layout').style.paddingBottom = '';
+}
+
+// Close on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('pdfDrawer').style.height !== '0px' &&
+      document.getElementById('pdfDrawer').style.height !== '') closePdfDrawer();
+});
+</script>
+<script src="demo.js?v=10"></script>
+<script src="auth.js?v=5"></script>
+</body>
+</html>
