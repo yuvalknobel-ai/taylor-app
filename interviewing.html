@@ -189,6 +189,7 @@
               <span x-text="col.label"></span>
               <span class="board-col-count" x-text="col.apps.length"></span>
             </div>
+            <div class="board-col-hint" x-text="col.hint"></div>
             <div class="board-col-body">
               <template x-for="app in col.apps" :key="app.id">
                 <div class="board-card" draggable="true"
@@ -196,6 +197,7 @@
                      @click="viewMode = 'list'; $nextTick(() => document.getElementById('card-' + app.id)?.scrollIntoView({behavior:'smooth', block:'center'}))">
                   <div class="board-card-company" x-text="app.company_name || 'Unknown company'"></div>
                   <div class="board-card-role" x-show="app.job_title" x-text="app.job_title"></div>
+                  <div class="board-card-stage" x-text="app.interview_stage || 'No stage set yet'"></div>
                 </div>
               </template>
               <div class="board-col-empty" x-show="col.apps.length === 0">Drop here</div>
@@ -791,27 +793,32 @@ function interviewingPage() {
 
     // ── Board view — 4 columns grouping the finer-grained interview_stage
     // values (CV Sent, Phone Screen, 1st/2nd/3rd Interview, Final Round,
-    // Offer) into a simple Applied -> Screening -> Interviews -> Offer flow.
-    // Dragging a card between columns writes back a representative stage
-    // for the new column (unless the card is just reordered within the
-    // same column's stage group, in which case its finer stage is kept).
+    // Offer) into a simple Interviewing -> Screening -> Interview Rounds ->
+    // Offer flow. Every card on this page already has app_status
+    // 'interviewing' or 'offer' (that's the page's own filter) — column 1
+    // is deliberately labeled "Interviewing" (not "Applied") so marking an
+    // application's status as Interviewing and seeing it land here isn't
+    // confusing. Dragging a card between columns writes back a
+    // representative stage for the new column (unless the card is just
+    // reordered within the same column's stage group, in which case its
+    // finer stage is kept).
     stageGroupKey(stage) {
-      if (!stage) return 'applied';
+      if (!stage) return 'new';
       if (['CV Sent', 'Phone Screen'].includes(stage)) return 'screen';
       if (['1st Interview', '2nd Interview', '3rd Interview', 'Final Round'].includes(stage)) return 'interview';
       if (stage === 'Offer') return 'offer';
-      return 'applied';
+      return 'new';
     },
     boardColumns() {
-      const groups = { applied: [], screen: [], interview: [], offer: [] };
+      const groups = { new: [], screen: [], interview: [], offer: [] };
       for (const app of this.applications) {
         groups[this.stageGroupKey(app.interview_stage)].push(app);
       }
       return [
-        { key: 'applied',   label: 'Applied',    apps: groups.applied },
-        { key: 'screen',    label: 'Screening',  apps: groups.screen },
-        { key: 'interview', label: 'Interviews', apps: groups.interview },
-        { key: 'offer',     label: 'Offer',      apps: groups.offer },
+        { key: 'new',       label: 'Interviewing', hint: 'No specific stage set yet', apps: groups.new },
+        { key: 'screen',    label: 'Screening',    hint: 'CV Sent · Phone Screen', apps: groups.screen },
+        { key: 'interview', label: 'Interview Rounds', hint: '1st–3rd Interview · Final Round', apps: groups.interview },
+        { key: 'offer',     label: 'Offer',        hint: 'Offer extended', apps: groups.offer },
       ];
     },
     async onBoardDrop(colKey) {
@@ -819,7 +826,7 @@ function interviewingPage() {
       this._dragApp = null;
       if (!app || this.stageGroupKey(app.interview_stage) === colKey) return;
 
-      const stageForColumn = { applied: null, screen: 'CV Sent', interview: '1st Interview', offer: 'Offer' };
+      const stageForColumn = { new: null, screen: 'CV Sent', interview: '1st Interview', offer: 'Offer' };
       app.interview_stage = stageForColumn[colKey];
 
       await fetch(`/api/applications/${app.id}/details`, {

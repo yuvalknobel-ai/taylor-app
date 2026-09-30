@@ -1864,7 +1864,14 @@ ins.wd-add {
   color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 4px 6px 10px;
+  padding: 4px 6px 0;
+}
+/* Explains what belongs in this column — e.g. "CV Sent · Phone Screen" —
+   so it's clear why a card landed where it did, not just a bare label. */
+.board-col-hint {
+  font-size: 11px;
+  color: var(--subtle);
+  padding: 2px 6px 10px;
 }
 .board-col-count {
   background: var(--border);
@@ -1892,6 +1899,19 @@ ins.wd-add {
   font-family: 'DM Serif Display', Georgia, serif;
 }
 .board-card-role { font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* The specific interview_stage value (e.g. "Phone Screen"), so a card's
+   exact position is visible even though the columns group several stages
+   together. */
+.board-card-stage {
+  display: inline-block;
+  margin-top: 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-light);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
 .board-col-empty {
   font-size: 12px;
   color: var(--subtle);
