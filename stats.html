@@ -97,8 +97,10 @@
         <p class="subtitle">How the hunt is going, <span class="user-name">there</span>.</p>
       </div>
 
-      <!-- AI usage highlight bar -->
-      <div class="ai-usage-bar" x-show="usage">
+      <!-- AI usage highlight bar — meaningless when AI features are off (3 of
+           its 4 numbers are permanently zero); the funnel row below already
+           shows the total application count. -->
+      <div class="ai-usage-bar ai-only" x-show="usage">
         <div class="ai-usage-item">
           <span class="ai-usage-icon">🤖</span>
           <span class="ai-usage-label">AI calls this session</span>

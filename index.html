@@ -142,21 +142,21 @@
 
       <!-- Glance strip: totals (compact) -->
       <div class="dash-stats dash-stats-compact">
-        <a href="history.html" class="dash-tile" style="background:#EEEDFE">
-          <div class="dash-tile-top"><span class="dash-tile-icon">💼</span><span class="dash-tile-value" style="color:#26215C" x-text="(s.tracked ?? s.total) || 0"></span></div>
-          <div class="dash-tile-label" style="color:#3C3489">Applications</div>
+        <a href="history.html" class="dash-tile dash-tile-1">
+          <div class="dash-tile-top"><span class="dash-tile-icon">💼</span><span class="dash-tile-value" x-text="(s.tracked ?? s.total) || 0"></span></div>
+          <div class="dash-tile-label">Applications</div>
         </a>
-        <a href="history.html" class="dash-tile" style="background:#DEDBFB">
-          <div class="dash-tile-top"><span class="dash-tile-icon">📤</span><span class="dash-tile-value" style="color:#26215C" x-text="(s.by_status && s.by_status.sent) || 0"></span></div>
-          <div class="dash-tile-label" style="color:#3C3489">Awaiting reply</div>
+        <a href="history.html" class="dash-tile dash-tile-2">
+          <div class="dash-tile-top"><span class="dash-tile-icon">📤</span><span class="dash-tile-value" x-text="(s.by_status && s.by_status.sent) || 0"></span></div>
+          <div class="dash-tile-label">Awaiting reply</div>
         </a>
-        <a href="interviewing.html" class="dash-tile" style="background:#CECBF6">
-          <div class="dash-tile-top"><span class="dash-tile-icon">📅</span><span class="dash-tile-value" style="color:#26215C" x-text="s.interviewing || 0"></span></div>
-          <div class="dash-tile-label" style="color:#3C3489">Interviewing</div>
+        <a href="interviewing.html" class="dash-tile dash-tile-3">
+          <div class="dash-tile-top"><span class="dash-tile-icon">📅</span><span class="dash-tile-value" x-text="s.interviewing || 0"></span></div>
+          <div class="dash-tile-label">Interviewing</div>
         </a>
-        <a href="interviewing.html" class="dash-tile" style="background:#BBB4F0">
-          <div class="dash-tile-top"><span class="dash-tile-icon">🎉</span><span class="dash-tile-value" style="color:#26215C" x-text="s.offers || 0"></span></div>
-          <div class="dash-tile-label" style="color:#3C3489">Offers</div>
+        <a href="interviewing.html" class="dash-tile dash-tile-4">
+          <div class="dash-tile-top"><span class="dash-tile-icon">🎉</span><span class="dash-tile-value" x-text="s.offers || 0"></span></div>
+          <div class="dash-tile-label">Offers</div>
         </a>
       </div>
 
