@@ -549,12 +549,17 @@
 
     <!-- Toast notification — must stay inside the x-data scope above (toast
          is a property of historyPage(), not a global) or Alpine throws
-         "toast is not defined" on every load. -->
-    <div x-show="toast.show" x-cloak x-text="toast.msg"
+         "toast is not defined" on every load. Supports an optional action
+         link (e.g. "View on Interviewing →") alongside the message. -->
+    <div x-show="toast.show" x-cloak
          style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
                 background:#1e1e2e;color:#fff;padding:10px 20px;border-radius:20px;
                 font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.25);
-                pointer-events:none;white-space:nowrap;">
+                white-space:nowrap;display:flex;align-items:center;gap:12px;">
+      <span x-text="toast.msg"></span>
+      <a x-show="toast.href" :href="toast.href"
+         style="color:#a5b4fc;text-decoration:none;font-weight:700;"
+         x-text="toast.linkText || 'View →'"></a>
     </div>
 
     </div><!-- /.main-inner -->
@@ -628,7 +633,8 @@ function historyPage() {
     allCategories: [],
     appCategories: {},
 
-    toast: { show: false, msg: '' },
+    toast: { show: false, msg: '', href: null, linkText: null },
+    _toastTimer: null,
     showUpload: false,
     uploadStep: 1,
     uploadAppId: null,
@@ -769,12 +775,19 @@ function historyPage() {
     },
 
     async updateStatus(app, status) {
+      const wasInterviewing = app.app_status === 'interviewing';
       app.app_status = status;
       await fetch(`/api/applications/${app.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
+      if (status === 'interviewing' && !wasInterviewing) {
+        this.showToast(`📅 ${app.company_name || 'This application'} moved to Interviewing`, {
+          href: 'interviewing.html',
+          linkText: 'View there →',
+        });
+      }
     },
 
     async replaceCv(app, file) {
@@ -859,9 +872,12 @@ function historyPage() {
       this.archiveLoading = false;
     },
 
-    showToast(msg) {
-      this.toast = { show: true, msg };
-      setTimeout(() => { this.toast.show = false; }, 3000);
+    showToast(msg, opts) {
+      opts = opts || {};
+      clearTimeout(this._toastTimer);
+      this.toast = { show: true, msg, href: opts.href || null, linkText: opts.linkText || null };
+      // Give toasts with an action link more time to notice and click.
+      this._toastTimer = setTimeout(() => { this.toast.show = false; }, opts.href ? 5000 : 3000);
     },
 
     async permanentDelete(app) {

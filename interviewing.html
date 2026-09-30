@@ -500,6 +500,19 @@
         </div>
       </div>
 
+      <!-- Toast notification — same pattern as Applications' toast. Must
+           stay inside the x-data scope (interviewingPage()) above. -->
+      <div x-show="toast.show" x-cloak
+           style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+                  background:#1e1e2e;color:#fff;padding:10px 20px;border-radius:20px;
+                  font-size:13px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.25);
+                  white-space:nowrap;display:flex;align-items:center;gap:12px;">
+        <span x-text="toast.msg"></span>
+        <a x-show="toast.href" :href="toast.href"
+           style="color:#a5b4fc;text-decoration:none;font-weight:700;"
+           x-text="toast.linkText || 'View →'"></a>
+      </div>
+
     </div><!-- /.main-inner -->
   </main>
 </div>
@@ -565,6 +578,8 @@ function interviewingPage() {
     applications: [],
     loading: true,
     _adding: false,
+    toast: { show: false, msg: '', href: null, linkText: null },
+    _toastTimer: null,
     archivedApps: [],
     showArchive: false,
     archiveLoading: false,
@@ -653,8 +668,19 @@ function interviewingPage() {
           const el = this.$refs.processList && this.$refs.processList.querySelector(`[data-id="${app.id}"]`);
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
+        this.showToast('📋 Added — also on your Applications page', {
+          href: 'history.html',
+          linkText: 'View there →',
+        });
       } catch (e) {}
       this._adding = false;
+    },
+
+    showToast(msg, opts) {
+      opts = opts || {};
+      clearTimeout(this._toastTimer);
+      this.toast = { show: true, msg, href: opts.href || null, linkText: opts.linkText || null };
+      this._toastTimer = setTimeout(() => { this.toast.show = false; }, opts.href ? 5000 : 3000);
     },
 
     // Archive a process (soft delete). Removes it from the board; restorable below.
