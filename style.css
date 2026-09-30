@@ -3688,6 +3688,13 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
   margin-bottom: 14px;
 }
 .home-card-ico { display: inline-flex; line-height: 0; }
+/* Soft pastel green instead of the harsh saturated green the ✅ emoji
+   rendered as (emoji glyph colors can't be restyled via CSS). */
+.home-card-ico-check circle { fill: #86d4ab; }
+:root[data-theme="dark"] .home-card-ico-check circle { fill: #4f9e74; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .home-card-ico-check circle { fill: #4f9e74; }
+}
 .week-metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
