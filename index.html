@@ -260,7 +260,13 @@
                    :class="{ 'cal-day-empty': !cell, 'cal-day-today': cell && cell.isToday, 'cal-day-selected': cell && selectedCalDay === cell.date, 'cal-day-clickable': cell && cell.items.length }"
                    @click="cell && cell.items.length && (selectedCalDay = selectedCalDay === cell.date ? null : cell.date)">
                 <span x-show="cell" x-text="cell && cell.day"></span>
-                <span class="cal-dot" x-show="cell && cell.items.length" :style="cell && `background:${calDotColor(cell.items)}`"></span>
+                <!-- No x-show here deliberately: x-show and :style both
+                     write the element's inline `style` attribute, and on
+                     Alpine a falsy :style value can clear the display:none
+                     x-show just set, un-hiding the dot on every empty day.
+                     Instead the dot always renders but is invisible
+                     (background:transparent) when there's nothing to show. -->
+                <span class="cal-dot" :style="cell && `background:${calDotColor(cell.items)}`"></span>
               </div>
             </template>
           </div>
@@ -339,6 +345,7 @@ function homePage() {
       return '#6366f1'; // scheduled / pending
     },
     calDotColor(items) {
+      if (!items || !items.length) return 'transparent';
       const priority = { scheduled: 0, pending: 0, passed: 1, rejected: 1 };
       const sorted = [...items].sort((a, b) => (priority[a.outcome] ?? 0) - (priority[b.outcome] ?? 0));
       return sorted[0].outcomeColor;

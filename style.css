@@ -3837,7 +3837,11 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
 .cal-day-clickable { cursor: pointer; transition: transform 0.1s, box-shadow 0.1s; }
 .cal-day-clickable:hover { box-shadow: 0 0 0 1.5px var(--accent); }
 .cal-day-selected { box-shadow: 0 0 0 2px var(--accent); font-weight: 700; }
-.cal-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+/* Transparent by default — only visible when the inline :style binding
+   sets a real color for a day with items. Blank leading/trailing cells
+   (no `cell` object at all) never get that inline style, so without this
+   default they'd fall back to visibly showing a dot. */
+.cal-dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
 
 /* Agenda panel — paired with the calendar card. Default view: upcoming
    interviews across every process; clicking a dotted day filters to it. */
