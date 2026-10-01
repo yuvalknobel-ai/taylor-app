@@ -3776,8 +3776,11 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
   align-items: stretch;
 }
 .home-focus-grid .home-card { margin-bottom: 0; }
+/* Breathing room before the next card (Calendar) that follows the grid. */
+.home-focus-grid { margin-bottom: 20px; }
 
-/* Home calendar card */
+/* Home calendar card — capped width so cells stay compact instead of
+   stretching to the full card width, and centered within the card. */
 .cal-nav-btn {
   background: none;
   border: 1.5px solid var(--border);
@@ -3793,36 +3796,35 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 3px;
-  margin-top: 14px;
+  gap: 4px;
+  margin: 14px auto 0;
+  max-width: 320px;
 }
 .cal-weekday {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--subtle);
   text-align: center;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   text-transform: uppercase;
 }
 .cal-day {
   aspect-ratio: 1;
+  max-height: 34px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--text);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--soft-bg);
   cursor: default;
 }
 .cal-day-empty { background: transparent; }
 .cal-day-today { background: var(--accent-light); font-weight: 700; color: var(--accent); }
-.cal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
-@media (max-width: 480px) {
-  .cal-day { font-size: 11px; }
-}
+.cal-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 @media (max-width: 820px) {
   .home-focus-grid { grid-template-columns: 1fr; }
 }
