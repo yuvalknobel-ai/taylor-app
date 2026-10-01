@@ -546,6 +546,9 @@
         <a x-show="toast.href" :href="toast.href"
            style="color:#a5b4fc;text-decoration:none;font-weight:700;"
            x-text="toast.linkText || 'View →'"></a>
+        <button x-show="toast.onAction" @click="toast.onAction && toast.onAction(); toast.show = false"
+                style="background:none;border:none;color:#a5b4fc;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;padding:0;"
+                x-text="toast.actionText || 'Undo'"></button>
       </div>
 
     </div><!-- /.main-inner -->
@@ -710,6 +713,7 @@ function interviewingPage() {
           href: 'history.html',
           linkText: 'View there →',
         });
+        if (window.checkMilestones) window.checkMilestones();
       } catch (e) {}
       this._adding = false;
     },
@@ -717,11 +721,16 @@ function interviewingPage() {
     showToast(msg, opts) {
       opts = opts || {};
       clearTimeout(this._toastTimer);
-      this.toast = { show: true, msg, href: opts.href || null, linkText: opts.linkText || null };
-      this._toastTimer = setTimeout(() => { this.toast.show = false; }, opts.href ? 5000 : 3000);
+      this.toast = {
+        show: true, msg,
+        href: opts.href || null, linkText: opts.linkText || null,
+        onAction: opts.onAction || null, actionText: opts.actionText || null,
+      };
+      this._toastTimer = setTimeout(() => { this.toast.show = false; }, (opts.href || opts.onAction) ? 5000 : 3000);
     },
 
-    // Archive a process (soft delete). Removes it from the board; restorable below.
+    // Archive a process (soft delete). Removes it from the board; restorable below
+    // or via the toast's Undo action.
     async archiveProcess(app) {
       if (!confirm(`Delete the process for ${app.company_name || 'this company'}? It moves to Archived and you can restore it.`)) return;
       await fetch(`/api/applications/${app.id}`, { method: 'DELETE' });
@@ -729,6 +738,15 @@ function interviewingPage() {
       if (this.showArchive || this.archivedApps.length) {
         this.archivedApps = [{ ...app }, ...this.archivedApps];
       }
+      this.showToast(`🗂 ${app.company_name || 'Process'} archived`, {
+        onAction: async () => {
+          await fetch(`/api/applications/${app.id}/restore`, { method: 'POST' });
+          this.archivedApps = this.archivedApps.filter(a => a.id !== app.id);
+          const res = await fetch('/api/interviewing');
+          const data = await res.json();
+          this.applications = data.map((a, i) => ({ ...a, _order: i + 1, _editing: false, _saving: false, _saved: false, _prepLoading: false, _prepQuestions: [], _showResearch: false }));
+        },
+      });
     },
 
     async toggleArchive() {
@@ -845,6 +863,7 @@ function interviewingPage() {
         });
         if (!wasOffer && window.launchConfetti) window.launchConfetti();
       }
+      if (window.checkMilestones) window.checkMilestones();
     },
 
     jdItems(s) {
@@ -871,6 +890,7 @@ function interviewingPage() {
         body: JSON.stringify({ status }),
       });
       if (status === 'offer' && !wasOffer && window.launchConfetti) window.launchConfetti();
+      if (window.checkMilestones) window.checkMilestones();
     },
 
     async saveDetails(app) {

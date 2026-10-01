@@ -1,6 +1,80 @@
 /* ── Reset & base ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Milestone celebration toast — standalone (not an Alpine component), so it
+   can appear on any page regardless of that page's own toast system. */
+.milestone-toast {
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  opacity: 0;
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  color: #fff;
+  padding: 11px 22px;
+  border-radius: 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  z-index: 10001;
+  box-shadow: 0 6px 20px rgba(124,58,237,.35);
+  white-space: nowrap;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+.milestone-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (max-width: 520px) {
+  .milestone-toast { white-space: normal; max-width: 88vw; text-align: center; }
+}
+
+/* Cmd+K / Ctrl+K command palette — jump to any application from anywhere. */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(2px);
+  z-index: 10000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+}
+.cmdk-box {
+  width: 520px;
+  max-width: 92vw;
+  background: var(--card-bg);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-hover);
+  overflow: hidden;
+}
+.cmdk-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1.5px solid var(--border);
+  padding: 16px 18px;
+  font-size: 15px;
+  font-family: inherit;
+  background: transparent;
+  color: var(--text);
+}
+.cmdk-input:focus { outline: none; }
+.cmdk-results { max-height: 320px; overflow-y: auto; padding: 6px; }
+.cmdk-empty { padding: 20px 14px; font-size: 13px; color: var(--subtle); text-align: center; }
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cmdk-item.active { background: var(--accent-light); }
+.cmdk-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cmdk-item-text { min-width: 0; }
+.cmdk-item-company { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdk-item-role { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmdk-hint { font-size: 11px; color: var(--subtle); padding: 8px 14px; border-top: 1px solid var(--border); }
+
 /* Feature flag: CV-generator entry points are hidden by default (no flash
    on load) and only revealed when /api/config returns generator_enabled=true.
    The bootstrap script in sidebar.js flips <html data-generator="on"> in that
@@ -1375,6 +1449,13 @@ ins.wd-add {
 .history-table tr:hover td { background: var(--soft-bg); }
 .history-table tr.row-editing td { background: var(--accent-light); }
 .history-table tr.row-selected td { background: var(--accent-light); }
+/* Brief highlight when landing on a row from the Cmd+K command palette. */
+.history-table tr.row-flash td { animation: row-flash-fade 2.2s ease-out; }
+@keyframes row-flash-fade {
+  0% { background: var(--accent-light); }
+  70% { background: var(--accent-light); }
+  100% { background: transparent; }
+}
 .row-checkbox { cursor: pointer; width: 15px; height: 15px; accent-color: var(--accent); }
 
 .sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
@@ -3549,6 +3630,17 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
   padding: 3px 11px;
   margin: 0;
 }
+.streak-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 20px;
+  padding: 3px 11px;
+  margin: 0;
+  cursor: default;
+}
 
 /* ── First-visit intro overlay (name + target role) ─────────────────────── */
 .intro-overlay {
@@ -3684,6 +3776,53 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
   align-items: stretch;
 }
 .home-focus-grid .home-card { margin-bottom: 0; }
+
+/* Home calendar card */
+.cal-nav-btn {
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  font-size: 14px;
+  cursor: pointer;
+}
+.cal-nav-btn:hover { background: var(--soft-bg); color: var(--text); }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  margin-top: 14px;
+}
+.cal-weekday {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--subtle);
+  text-align: center;
+  padding-bottom: 6px;
+  text-transform: uppercase;
+}
+.cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12.5px;
+  color: var(--text);
+  border-radius: 8px;
+  background: var(--soft-bg);
+  cursor: default;
+}
+.cal-day-empty { background: transparent; }
+.cal-day-today { background: var(--accent-light); font-weight: 700; color: var(--accent); }
+.cal-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+@media (max-width: 480px) {
+  .cal-day { font-size: 11px; }
+}
 @media (max-width: 820px) {
   .home-focus-grid { grid-template-columns: 1fr; }
 }

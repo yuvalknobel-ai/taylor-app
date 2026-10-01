@@ -1,5 +1,180 @@
 // Shared sidebar Alpine.js component — included on every page
 
+// ─── Cmd+K / Ctrl+K command palette ──────────────────────────────────────────
+// Jump to any application by company/role name from anywhere in the app.
+// Selecting a result navigates to history.html?goto=<id>, which scrolls to
+// and flashes that row (see the goto handling in history.html's init()).
+(function () {
+  let overlay = null;
+  let allApps = null; // cached per-open; refetched each time the palette opens
+  let selectedIndex = 0;
+  let currentResults = [];
+
+  function statusDotColor(status) {
+    const map = {
+      generated: '#c8cdd6', sent: '#f5a86a', interviewing: '#7dc4a0',
+      offer: '#b09de8', rejected: '#f59ab0',
+    };
+    return map[status] || '#c8cdd6';
+  }
+
+  function render(query) {
+    const list = overlay.querySelector('#cmdkResults');
+    const q = query.trim().toLowerCase();
+    currentResults = !allApps ? [] : allApps.filter(a =>
+      (a.company_name || '').toLowerCase().includes(q) ||
+      (a.job_title || '').toLowerCase().includes(q)
+    ).slice(0, 8);
+    selectedIndex = 0;
+
+    if (!q) {
+      list.innerHTML = '<div class="cmdk-empty">Type a company or role name…</div>';
+      return;
+    }
+    if (currentResults.length === 0) {
+      list.innerHTML = '<div class="cmdk-empty">No matches</div>';
+      return;
+    }
+    list.innerHTML = currentResults.map((a, i) => `
+      <div class="cmdk-item${i === 0 ? ' active' : ''}" data-index="${i}">
+        <span class="cmdk-item-dot" style="background:${statusDotColor(a.app_status)}"></span>
+        <div class="cmdk-item-text">
+          <div class="cmdk-item-company">${escapeHtmlCmdk(a.company_name || 'Unknown company')}</div>
+          <div class="cmdk-item-role">${escapeHtmlCmdk(a.job_title || '')}</div>
+        </div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.cmdk-item').forEach(el => {
+      el.addEventListener('click', () => goTo(currentResults[parseInt(el.dataset.index)]));
+      el.addEventListener('mouseenter', () => setActive(parseInt(el.dataset.index)));
+    });
+  }
+
+  function setActive(i) {
+    selectedIndex = i;
+    overlay.querySelectorAll('.cmdk-item').forEach((el, idx) => {
+      el.classList.toggle('active', idx === i);
+    });
+  }
+
+  function goTo(app) {
+    if (!app) return;
+    window.location.href = 'history.html?goto=' + app.id;
+  }
+
+  function escapeHtmlCmdk(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function closePalette() {
+    if (overlay) { overlay.remove(); overlay = null; }
+  }
+
+  async function openPalette() {
+    if (overlay) return;
+    overlay = document.createElement('div');
+    overlay.className = 'cmdk-overlay';
+    overlay.innerHTML = `
+      <div class="cmdk-box" role="dialog" aria-label="Jump to application">
+        <input type="text" id="cmdkInput" class="cmdk-input" placeholder="Jump to a company or role…" autocomplete="off">
+        <div id="cmdkResults" class="cmdk-results"></div>
+        <div class="cmdk-hint">↑↓ to navigate · Enter to open · Esc to close</div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closePalette(); });
+
+    const input = overlay.querySelector('#cmdkInput');
+    input.focus();
+    input.addEventListener('input', () => render(input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(selectedIndex + 1, currentResults.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(selectedIndex - 1, 0)); }
+      else if (e.key === 'Enter') { e.preventDefault(); goTo(currentResults[selectedIndex]); }
+    });
+
+    render('');
+    try {
+      const res = await fetch('/api/history');
+      allApps = res.ok ? await res.json() : [];
+      render(input.value);
+    } catch (e) { allApps = []; }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const isK = e.key === 'k' || e.key === 'K';
+    if ((e.metaKey || e.ctrlKey) && isK) {
+      e.preventDefault();
+      if (overlay) closePalette(); else openPalette();
+    }
+  });
+})();
+
+// ─── Milestone celebrations ──────────────────────────────────────────────────
+// Fires a one-time toast (+ confetti for the bigger ones) the first time the
+// user crosses a meaningful threshold: first application, first interview,
+// first offer, and round numbers of total applications. Each milestone key
+// fires exactly once ever (tracked in localStorage), regardless of which
+// page or action triggered the check. Standalone — doesn't depend on any
+// page's Alpine toast, so it works everywhere sidebar.js is loaded.
+function showMilestoneToast(msg) {
+  const el = document.createElement('div');
+  el.className = 'milestone-toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  }, 4200);
+}
+
+window.checkMilestones = async function () {
+  let stats;
+  try {
+    const res = await fetch('/api/stats');
+    if (!res.ok) return;
+    stats = await res.json();
+  } catch (e) { return; }
+
+  let seen;
+  try { seen = JSON.parse(localStorage.getItem('milestonesSeen') || '{}'); }
+  catch (e) { seen = {}; }
+
+  const fire = (key, msg, withConfetti) => {
+    if (seen[key]) return;
+    seen[key] = true;
+    localStorage.setItem('milestonesSeen', JSON.stringify(seen));
+    showMilestoneToast(msg);
+    if (withConfetti && window.launchConfetti) window.launchConfetti();
+  };
+
+  const total = stats.total || 0;
+  const interviewingOrFurther = (stats.interviewing || 0) + (stats.offers || 0);
+  const offers = stats.offers || 0;
+
+  if (total >= 1) fire('first_app', '🎉 Your first tracked application — the hunt begins!', false);
+  [5, 10, 25, 50, 100].forEach(n => {
+    if (total >= n) fire('apps_' + n, `🎉 ${n} applications tracked. Keep going!`, n >= 25);
+  });
+  if (interviewingOrFurther >= 1) fire('first_interview', '📅 Your first interview — nice work!', true);
+  if (offers >= 1) fire('first_offer', '🏆 Your first offer! Congratulations!', true);
+};
+
+// Check once per page load. Most mutating actions already navigate or
+// reload (the shared "Track a new application" modal, bulk imports), which
+// naturally re-triggers this; the couple of in-place actions that don't
+// (adding a process card, changing a status without leaving the page) call
+// window.checkMilestones() directly themselves.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => window.checkMilestones());
+} else {
+  window.checkMilestones();
+}
+
 // Small celebratory confetti burst — used when an application moves to
 // Interviewing or Offer. Self-contained canvas animation, no dependencies.
 window.launchConfetti = function () {

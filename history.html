@@ -132,6 +132,11 @@
       <h1>Applications</h1>
       <div class="history-filters">
         <button class="btn btn-sm btn-ghost" @click="exportCsv()" title="Export all applications as CSV">⬇ Export CSV</button>
+        <button class="btn btn-sm btn-ghost" @click="$refs.importCsvInput.click()" title="Import applications from a CSV file" :disabled="importing">
+          <span x-show="!importing">⬆ Import CSV</span>
+          <span x-show="importing" x-cloak>Importing…</span>
+        </button>
+        <input type="file" accept=".csv,text/csv" x-ref="importCsvInput" style="display:none" @change="importCsv($event.target.files[0]); $event.target.value = ''">
         <input class="search-input" x-model="search" @input="refilter()" placeholder="Search company or role...">
         <button class="btn btn-delete btn-sm" x-show="selectedIds.length > 0" x-cloak
                 @click="bulkDelete()"
@@ -217,7 +222,7 @@
       </thead>
       <template x-for="app in filteredApps" :key="app.id">
           <tbody>
-          <tr :class="editingId === app.id ? 'row-editing' : (selectedIds.includes(app.id) ? 'row-selected' : '')">
+          <tr :id="'row-' + app.id" :class="(editingId === app.id ? 'row-editing' : (selectedIds.includes(app.id) ? 'row-selected' : '')) + (_flashRowId === app.id ? ' row-flash' : '')">
             <td>
               <input type="checkbox" class="row-checkbox"
                      :checked="selectedIds.includes(app.id)"
@@ -562,6 +567,9 @@
       <a x-show="toast.href" :href="toast.href"
          style="color:#a5b4fc;text-decoration:none;font-weight:700;"
          x-text="toast.linkText || 'View →'"></a>
+      <button x-show="toast.onAction" @click="toast.onAction && toast.onAction(); toast.show = false"
+              style="background:none;border:none;color:#a5b4fc;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer;padding:0;"
+              x-text="toast.actionText || 'Undo'"></button>
     </div>
 
     </div><!-- /.main-inner -->
@@ -636,6 +644,8 @@ function historyPage() {
     appCategories: {},
 
     toast: { show: false, msg: '', href: null, linkText: null },
+    _flashRowId: null,
+    importing: false,
     _toastTimer: null,
     showUpload: false,
     uploadStep: 1,
@@ -713,6 +723,21 @@ function historyPage() {
         this.filterCompany = this.filterCompany === e.detail ? '' : e.detail;
         this.refilter();
       });
+
+      // Jump target from the Cmd+K command palette (any page can link here
+      // as history.html?goto=<id>). Clear filters so the row is guaranteed
+      // visible, then scroll to it and flash it briefly.
+      const gotoId = new URLSearchParams(location.search).get('goto');
+      if (gotoId) {
+        this.search = ''; this.filterStatus = ''; this.filterCompany = ''; this.filterLabels = [];
+        this.refilter();
+        this._flashRowId = gotoId;
+        this.$nextTick(() => {
+          document.getElementById('row-' + gotoId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        setTimeout(() => { this._flashRowId = null; }, 2200);
+        history.replaceState(null, '', location.pathname);
+      }
     },
 
     openSchedule(app) {
@@ -796,6 +821,7 @@ function historyPage() {
         this.showToast(`🎉 ${app.company_name || 'This application'} got an Offer!`);
         if (window.launchConfetti) window.launchConfetti();
       }
+      if (window.checkMilestones) window.checkMilestones();
     },
 
     async replaceCv(app, file) {
@@ -842,19 +868,135 @@ function historyPage() {
       a.click();
     },
 
+    // Minimal CSV parser — handles quoted fields, embedded commas, and
+    // escaped quotes ("" inside a quoted field). No external library.
+    _parseCsv(text) {
+      const rows = [];
+      let row = [], field = '', inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuotes) {
+          if (c === '"') {
+            if (text[i + 1] === '"') { field += '"'; i++; }
+            else inQuotes = false;
+          } else field += c;
+        } else if (c === '"') {
+          inQuotes = true;
+        } else if (c === ',') {
+          row.push(field); field = '';
+        } else if (c === '\n' || c === '\r') {
+          if (c === '\r' && text[i + 1] === '\n') i++;
+          row.push(field); field = '';
+          if (row.some(v => v !== '')) rows.push(row);
+          row = [];
+        } else {
+          field += c;
+        }
+      }
+      if (field !== '' || row.length) { row.push(field); if (row.some(v => v !== '')) rows.push(row); }
+      return rows;
+    },
+
+    // Import applications from a CSV file. Matches headers case-insensitively
+    // against the columns this app itself exports (Company, Role, Status,
+    // Stage, Referral, Salary Asked, Date) so a round-trip export→import
+    // works, but only "Company" is actually required — anything built from a
+    // plain spreadsheet (just company + role columns) still imports fine.
+    async importCsv(file) {
+      if (!file) return;
+      this.importing = true;
+      try {
+        const text = await file.text();
+        const rows = this._parseCsv(text);
+        if (rows.length < 2) { alert('No data rows found in that CSV.'); return; }
+
+        const header = rows[0].map(h => h.trim().toLowerCase());
+        const col = (...names) => {
+          for (const n of names) {
+            const i = header.indexOf(n);
+            if (i !== -1) return i;
+          }
+          return -1;
+        };
+        const idx = {
+          company: col('company', 'company name'),
+          role: col('role', 'job title', 'title'),
+          status: col('status'),
+          stage: col('stage', 'interview stage'),
+          referral: col('referral', 'referral name'),
+          salary: col('salary asked', 'salary'),
+          date: col('date', 'created'),
+        };
+        if (idx.company === -1) {
+          alert('CSV must have a "Company" column.');
+          return;
+        }
+        const allowedStatus = new Set(['generated', 'sent', 'interviewing', 'rejected', 'offer']);
+
+        let imported = 0, skipped = 0;
+        for (const r of rows.slice(1)) {
+          const company = (r[idx.company] || '').trim();
+          if (!company) { skipped++; continue; }
+          const status = idx.status !== -1 ? (r[idx.status] || '').trim().toLowerCase() : '';
+          const res = await fetch('/api/applications/manual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              company_name: company,
+              job_title: idx.role !== -1 ? (r[idx.role] || '').trim() : '',
+              app_status: allowedStatus.has(status) ? status : 'sent',
+              referral_name: idx.referral !== -1 ? (r[idx.referral] || '').trim() : '',
+            }),
+          });
+          const created = await res.json();
+          const extra = {};
+          if (idx.stage !== -1 && r[idx.stage]) extra.interview_stage = r[idx.stage].trim();
+          if (idx.salary !== -1 && r[idx.salary]) extra.salary_asked = r[idx.salary].trim();
+          if (idx.date !== -1 && r[idx.date]) extra.created_at = r[idx.date].trim();
+          if (Object.keys(extra).length) {
+            await fetch(`/api/applications/${created.id}/details`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(extra),
+            });
+          }
+          imported++;
+        }
+
+        const res2 = await fetch('/api/history');
+        this.applications = await res2.json();
+        this.refilter();
+        this.showToast(`📥 Imported ${imported} application${imported === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped — no company name)` : ''}`);
+        if (window.checkMilestones) window.checkMilestones();
+      } catch (e) {
+        alert('Could not import this CSV: ' + (e && e.message || e));
+      } finally {
+        this.importing = false;
+      }
+    },
+
     async bulkDelete() {
       const n = this.selectedIds.length;
       if (!confirm(`Archive ${n} application${n > 1 ? 's' : ''}? You can restore them later from the Archive section.`)) return;
-      const archived = this.applications.filter(a => this.selectedIds.includes(a.id));
-      await Promise.all(this.selectedIds.map(id => fetch(`/api/applications/${id}`, { method: 'DELETE' })));
-      this.applications = this.applications.filter(a => !this.selectedIds.includes(a.id));
+      const ids = [...this.selectedIds];
+      const archived = this.applications.filter(a => ids.includes(a.id));
+      await Promise.all(ids.map(id => fetch(`/api/applications/${id}`, { method: 'DELETE' })));
+      this.applications = this.applications.filter(a => !ids.includes(a.id));
       if (this.showArchive) {
         this.archivedApps = [...archived.map(a => ({ ...a, archived: 1 })), ...this.archivedApps];
       }
       this.selectedIds = [];
       this.editingId = null;
       this.refilter();
-      this.showToast(`🗂 ${n} application${n > 1 ? 's' : ''} archived`);
+      this.showToast(`🗂 ${n} application${n > 1 ? 's' : ''} archived`, {
+        onAction: async () => {
+          await Promise.all(ids.map(id => fetch(`/api/applications/${id}/restore`, { method: 'POST' })));
+          const res = await fetch('/api/history');
+          this.applications = await res.json();
+          this.archivedApps = this.archivedApps.filter(a => !ids.includes(a.id));
+          this.refilter();
+        },
+      });
     },
 
     async deleteApp(app) {
@@ -868,7 +1010,15 @@ function historyPage() {
         this.archivedApps = [{ ...app, archived: 1 }, ...this.archivedApps];
       }
       this.refilter();
-      this.showToast(`🗂 ${label} archived`);
+      this.showToast(`🗂 ${label} archived`, {
+        onAction: async () => {
+          await fetch(`/api/applications/${app.id}/restore`, { method: 'POST' });
+          const res = await fetch('/api/history');
+          this.applications = await res.json();
+          this.archivedApps = this.archivedApps.filter(a => a.id !== app.id);
+          this.refilter();
+        },
+      });
     },
 
     async loadArchive() {
@@ -883,9 +1033,13 @@ function historyPage() {
     showToast(msg, opts) {
       opts = opts || {};
       clearTimeout(this._toastTimer);
-      this.toast = { show: true, msg, href: opts.href || null, linkText: opts.linkText || null };
-      // Give toasts with an action link more time to notice and click.
-      this._toastTimer = setTimeout(() => { this.toast.show = false; }, opts.href ? 5000 : 3000);
+      this.toast = {
+        show: true, msg,
+        href: opts.href || null, linkText: opts.linkText || null,
+        onAction: opts.onAction || null, actionText: opts.actionText || null,
+      };
+      // Give toasts with an action (link or undo) more time to notice and click.
+      this._toastTimer = setTimeout(() => { this.toast.show = false; }, (opts.href || opts.onAction) ? 5000 : 3000);
     },
 
     async permanentDelete(app) {

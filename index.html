@@ -133,6 +133,10 @@
           <div class="hero-title-row">
             <h1 class="hero-title" id="heroGreeting">Hey Yuvi 👋</h1>
             <span id="targetRoleTag" class="target-role-tag" style="display:none"></span>
+            <span class="streak-badge" x-show="streak >= 1" x-cloak
+                  :title="`At least one application logged in each of the last ${streak} week${streak>1?'s':''}`">
+              🔥 <span x-text="streak"></span>-week streak
+            </span>
           </div>
           <p class="hero-sub">The job hunt gets messy fast. Log every application, watch them move, and always know what's next.</p>
           <button type="button" class="btn btn-primary dash-cta" @click="openAddAppModal()">+ Track a new application</button>
@@ -232,6 +236,31 @@
 
       </div><!-- /.home-focus-grid -->
 
+      <!-- Calendar — a dot on every day that has an interview step, across
+           every active/offer process, not just the upcoming ones. -->
+      <div class="home-card">
+        <div class="home-card-title" style="justify-content:space-between;display:flex;width:100%">
+          <span>📆 Calendar</span>
+          <span style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;color:var(--muted)">
+            <button class="cal-nav-btn" @click="calPrevMonth()" title="Previous month">‹</button>
+            <span x-text="calMonthLabel()"></span>
+            <button class="cal-nav-btn" @click="calNextMonth()" title="Next month">›</button>
+          </span>
+        </div>
+        <div class="cal-grid">
+          <template x-for="d in ['S','M','T','W','T','F','S']" :key="'h'+d">
+            <div class="cal-weekday" x-text="d"></div>
+          </template>
+          <template x-for="(cell, i) in calendarDays()" :key="i">
+            <div class="cal-day" :class="{ 'cal-day-empty': !cell, 'cal-day-today': cell && cell.isToday }"
+                 :title="cell && cell.items.length ? cell.items.map(it => it.company_name + ' — ' + it.step_name).join('\n') : ''">
+              <span x-show="cell" x-text="cell && cell.day"></span>
+              <span class="cal-dot" x-show="cell && cell.items.length"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
     </div><!-- /.main-inner -->
   </main>
 
@@ -246,9 +275,92 @@ function homePage() {
     week: { interviews: [], interviews_count: 0, cvs_to_send: 0, sent_this_week: 0 },
     tasks: [],
     newTask: '',
+    streak: 0,
+    calSteps: [],      // flat list of { date: 'YYYY-MM-DD', company_name, step_name } across all processes
+    calYear: new Date().getFullYear(),
+    calMonth: new Date().getMonth(), // 0-based
     async init() {
-      await Promise.all([this.loadStats(), this.loadWeek(), this.loadTasks()]);
+      await Promise.all([this.loadStats(), this.loadWeek(), this.loadTasks(), this.loadStreak(), this.loadCalendar()]);
       this.$nextTick(() => this.initSortable());
+    },
+
+    async loadCalendar() {
+      try {
+        const apps = await (await fetch('/api/interviewing')).json();
+        const steps = [];
+        for (const app of apps) {
+          for (const s of (app.steps || [])) {
+            if (s.step_date) steps.push({ date: s.step_date, company_name: app.company_name || 'Unknown company', step_name: s.step_name || 'Step' });
+          }
+        }
+        this.calSteps = steps;
+      } catch (e) { this.calSteps = []; }
+    },
+    calMonthLabel() {
+      return new Date(this.calYear, this.calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    },
+    calPrevMonth() {
+      this.calMonth--;
+      if (this.calMonth < 0) { this.calMonth = 11; this.calYear--; }
+    },
+    calNextMonth() {
+      this.calMonth++;
+      if (this.calMonth > 11) { this.calMonth = 0; this.calYear++; }
+    },
+    // Returns a flat 42-cell (6-week) grid for the current calMonth/calYear;
+    // null for leading/trailing blanks outside the month.
+    calendarDays() {
+      const firstOfMonth = new Date(this.calYear, this.calMonth, 1);
+      const startOffset = firstOfMonth.getDay(); // 0=Sun
+      const daysInMonth = new Date(this.calYear, this.calMonth + 1, 0).getDate();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const cells = [];
+      for (let i = 0; i < startOffset; i++) cells.push(null);
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${this.calYear}-${String(this.calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        cells.push({
+          day,
+          isToday: dateStr === todayStr,
+          items: this.calSteps.filter(s => s.date === dateStr),
+        });
+      }
+      while (cells.length % 7 !== 0) cells.push(null);
+      return cells;
+    },
+
+    // Consecutive Mon–Sun weeks, counting back from the most recent week
+    // that has at least one application created in it, with at least one
+    // application in every week before that too. A quiet current week
+    // (nothing logged yet) doesn't break a streak built on earlier weeks —
+    // it just isn't counted until something is added.
+    async loadStreak() {
+      try {
+        const apps = await (await fetch('/api/history')).json();
+        const dates = apps.map(a => a.created_at).filter(Boolean).map(d => new Date(d));
+        if (!dates.length) { this.streak = 0; return; }
+
+        const mondayOf = (d) => {
+          const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          const offset = (date.getDay() + 6) % 7; // Mon=0 .. Sun=6
+          date.setDate(date.getDate() - offset);
+          return date.toISOString().slice(0, 10);
+        };
+        const weeksWithActivity = new Set(dates.map(mondayOf));
+
+        let cursor = new Date();
+        let key = mondayOf(cursor);
+        if (!weeksWithActivity.has(key)) {
+          cursor.setDate(cursor.getDate() - 7);
+          key = mondayOf(cursor);
+        }
+        let streak = 0;
+        while (weeksWithActivity.has(key)) {
+          streak++;
+          cursor.setDate(cursor.getDate() - 7);
+          key = mondayOf(cursor);
+        }
+        this.streak = streak;
+      } catch (e) { this.streak = 0; }
     },
     initSortable() {
       const el = this.$refs.taskList;
