@@ -184,19 +184,6 @@
             <div class="week-metric-label">Sent</div>
           </a>
         </div>
-        <template x-if="week.interviews && week.interviews.length">
-          <div class="week-interviews">
-            <template x-for="iv in week.interviews" :key="iv.company_name + iv.step_name + iv.step_date">
-              <a href="interviewing.html" class="week-interview-row">
-                <span class="week-interview-date" x-text="fmtDate(iv.step_date)"></span>
-                <span class="week-interview-text"><strong x-text="iv.company_name || 'Unknown'"></strong> <span x-text="'· ' + (iv.step_name || '')"></span></span>
-              </a>
-            </template>
-          </div>
-        </template>
-        <template x-if="!week.interviews || !week.interviews.length">
-          <div class="week-empty">No upcoming interviews scheduled.</div>
-        </template>
       </div>
 
       <!-- Tasks -->
@@ -483,10 +470,6 @@ function homePage() {
     async deleteTask(task) {
       await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
       await this.loadTasks();
-    },
-    fmtDate(d) {
-      if (!d) return '';
-      return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
     },
   };
 }
