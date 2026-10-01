@@ -3779,8 +3779,10 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
 /* Breathing room before the next card (Calendar) that follows the grid. */
 .home-focus-grid { margin-bottom: 20px; }
 
-/* Home calendar card — capped width so cells stay compact instead of
-   stretching to the full card width, and centered within the card. */
+/* Home calendar card — the card itself is sized to its content (not
+   stretched to the page width) so it reads as one compact, roughly square
+   card instead of a wide strip with empty space on both sides. */
+.home-card-calendar { max-width: 400px; }
 .cal-nav-btn {
   background: none;
   border: 1.5px solid var(--border);
@@ -3796,12 +3798,11 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  margin: 14px auto 0;
-  max-width: 320px;
+  gap: 5px;
+  margin-top: 14px;
 }
 .cal-weekday {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--subtle);
   text-align: center;
@@ -3810,13 +3811,12 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
 }
 .cal-day {
   aspect-ratio: 1;
-  max-height: 34px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--text);
   border-radius: 7px;
   background: var(--soft-bg);
