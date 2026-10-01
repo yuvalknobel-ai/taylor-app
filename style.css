@@ -3779,10 +3779,20 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
 /* Breathing room before the next card (Calendar) that follows the grid. */
 .home-focus-grid { margin-bottom: 20px; }
 
-/* Home calendar card — the card itself is sized to its content (not
-   stretched to the page width) so it reads as one compact, roughly square
-   card instead of a wide strip with empty space on both sides. */
+/* Calendar + Agenda row — calendar sized to its own content, agenda fills
+   the rest instead of leaving empty space beside a lone compact card. */
+.home-cal-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.home-cal-row .home-card { margin-bottom: 0; }
+@media (max-width: 760px) {
+  .home-cal-row { grid-template-columns: 1fr; }
+}
 .home-card-calendar { max-width: 400px; }
+.home-card-agenda { min-width: 0; }
 .cal-nav-btn {
   background: none;
   border: 1.5px solid var(--border);
@@ -3824,7 +3834,31 @@ a.auth-signup-btn:hover { color: #fff; background: #4f46e5; }
 }
 .cal-day-empty { background: transparent; }
 .cal-day-today { background: var(--accent-light); font-weight: 700; color: var(--accent); }
+.cal-day-clickable { cursor: pointer; transition: transform 0.1s, box-shadow 0.1s; }
+.cal-day-clickable:hover { box-shadow: 0 0 0 1.5px var(--accent); }
+.cal-day-selected { box-shadow: 0 0 0 2px var(--accent); font-weight: 700; }
 .cal-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+
+/* Agenda panel — paired with the calendar card. Default view: upcoming
+   interviews across every process; clicking a dotted day filters to it. */
+.agenda-list { display: flex; flex-direction: column; margin-top: 10px; }
+.agenda-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  border-top: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.12s;
+}
+.agenda-item:first-child { border-top: none; }
+.agenda-item:hover { background: var(--soft-bg); }
+.agenda-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.agenda-item-text { flex: 1; min-width: 0; }
+.agenda-item-company { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-item-step { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-item-date { font-size: 12px; color: var(--subtle); flex-shrink: 0; white-space: nowrap; }
 @media (max-width: 820px) {
   .home-focus-grid { grid-template-columns: 1fr; }
 }

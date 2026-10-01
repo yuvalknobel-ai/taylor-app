@@ -236,30 +236,56 @@
 
       </div><!-- /.home-focus-grid -->
 
-      <!-- Calendar — a dot on every day that has an interview step, across
-           every active/offer process, not just the upcoming ones. Sized to
-           its own content (not stretched to the page width) so it reads as
-           a compact, square-ish card like the others above it. -->
-      <div class="home-card home-card-calendar">
-        <div class="home-card-title" style="justify-content:space-between;display:flex;width:100%">
-          <span>📆 Calendar</span>
-          <span style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;color:var(--muted)">
-            <button class="cal-nav-btn" @click="calPrevMonth()" title="Previous month">‹</button>
-            <span x-text="calMonthLabel()"></span>
-            <button class="cal-nav-btn" @click="calNextMonth()" title="Next month">›</button>
-          </span>
+      <!-- Calendar + Agenda — paired side by side so the row isn't just a
+           compact calendar floating in empty space. Clicking a day filters
+           the agenda to that day's interviews; dot color signals outcome
+           (upcoming / passed / rejected) at a glance, across every
+           active/offer process, not just the next few days. -->
+      <div class="home-cal-row">
+        <div class="home-card home-card-calendar">
+          <div class="home-card-title" style="justify-content:space-between;display:flex;width:100%">
+            <span>📆 Calendar</span>
+            <span style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;color:var(--muted)">
+              <button class="cal-nav-btn" @click="calPrevMonth()" title="Previous month">‹</button>
+              <span x-text="calMonthLabel()"></span>
+              <button class="cal-nav-btn" @click="calNextMonth()" title="Next month">›</button>
+            </span>
+          </div>
+          <div class="cal-grid">
+            <template x-for="d in ['S','M','T','W','T','F','S']" :key="'h'+d">
+              <div class="cal-weekday" x-text="d"></div>
+            </template>
+            <template x-for="(cell, i) in calendarDays()" :key="i">
+              <div class="cal-day"
+                   :class="{ 'cal-day-empty': !cell, 'cal-day-today': cell && cell.isToday, 'cal-day-selected': cell && selectedCalDay === cell.date, 'cal-day-clickable': cell && cell.items.length }"
+                   @click="cell && cell.items.length && (selectedCalDay = selectedCalDay === cell.date ? null : cell.date)">
+                <span x-show="cell" x-text="cell && cell.day"></span>
+                <span class="cal-dot" x-show="cell && cell.items.length" :style="cell && `background:${calDotColor(cell.items)}`"></span>
+              </div>
+            </template>
+          </div>
         </div>
-        <div class="cal-grid">
-          <template x-for="d in ['S','M','T','W','T','F','S']" :key="'h'+d">
-            <div class="cal-weekday" x-text="d"></div>
-          </template>
-          <template x-for="(cell, i) in calendarDays()" :key="i">
-            <div class="cal-day" :class="{ 'cal-day-empty': !cell, 'cal-day-today': cell && cell.isToday }"
-                 :title="cell && cell.items.length ? cell.items.map(it => it.company_name + ' — ' + it.step_name).join('\n') : ''">
-              <span x-show="cell" x-text="cell && cell.day"></span>
-              <span class="cal-dot" x-show="cell && cell.items.length"></span>
-            </div>
-          </template>
+
+        <!-- Agenda: the selected day's interviews, or upcoming ones by default. -->
+        <div class="home-card home-card-agenda">
+          <div class="home-card-title" style="justify-content:space-between;display:flex;width:100%">
+            <span x-text="selectedCalDay ? agendaDayLabel() : '📋 Upcoming'"></span>
+            <button class="cal-nav-btn" x-show="selectedCalDay" @click="selectedCalDay = null" title="Back to upcoming" style="width:auto;padding:0 8px">Clear</button>
+          </div>
+          <div class="agenda-list">
+            <template x-for="item in agendaItems()" :key="item.date + item.company_name + item.step_name">
+              <a href="interviewing.html" class="agenda-item">
+                <span class="agenda-dot" :style="`background:${item.outcomeColor}`"></span>
+                <div class="agenda-item-text">
+                  <div class="agenda-item-company" x-text="item.company_name"></div>
+                  <div class="agenda-item-step" x-text="item.step_name"></div>
+                </div>
+                <div class="agenda-item-date" x-text="fmtAgendaDate(item.date)"></div>
+              </a>
+            </template>
+            <div class="week-empty" x-show="!agendaItems().length" x-cloak
+                 x-text="selectedCalDay ? 'Nothing on this day.' : 'No upcoming interviews.'"></div>
+          </div>
         </div>
       </div>
 
@@ -278,9 +304,10 @@ function homePage() {
     tasks: [],
     newTask: '',
     streak: 0,
-    calSteps: [],      // flat list of { date: 'YYYY-MM-DD', company_name, step_name } across all processes
+    calSteps: [],      // flat list of { date, company_name, step_name, outcome, outcomeColor } across all processes
     calYear: new Date().getFullYear(),
     calMonth: new Date().getMonth(), // 0-based
+    selectedCalDay: null, // 'YYYY-MM-DD' or null — clicking a day with a dot filters the agenda to it
     async init() {
       await Promise.all([this.loadStats(), this.loadWeek(), this.loadTasks(), this.loadStreak(), this.loadCalendar()]);
       this.$nextTick(() => this.initSortable());
@@ -292,11 +319,29 @@ function homePage() {
         const steps = [];
         for (const app of apps) {
           for (const s of (app.steps || [])) {
-            if (s.step_date) steps.push({ date: s.step_date, company_name: app.company_name || 'Unknown company', step_name: s.step_name || 'Step' });
+            if (s.step_date) steps.push({
+              date: s.step_date,
+              company_name: app.company_name || 'Unknown company',
+              step_name: s.step_name || 'Step',
+              outcome: s.outcome || 'scheduled',
+              outcomeColor: this.calOutcomeColor(s.outcome),
+            });
           }
         }
         this.calSteps = steps;
       } catch (e) { this.calSteps = []; }
+    },
+    // Scheduled/pending (still ahead of you, needs prep) takes visual
+    // priority over already-resolved outcomes on the same day.
+    calOutcomeColor(outcome) {
+      if (outcome === 'rejected') return '#f59ab0';
+      if (outcome === 'passed') return '#7dc4a0';
+      return '#6366f1'; // scheduled / pending
+    },
+    calDotColor(items) {
+      const priority = { scheduled: 0, pending: 0, passed: 1, rejected: 1 };
+      const sorted = [...items].sort((a, b) => (priority[a.outcome] ?? 0) - (priority[b.outcome] ?? 0));
+      return sorted[0].outcomeColor;
     },
     calMonthLabel() {
       return new Date(this.calYear, this.calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -322,12 +367,36 @@ function homePage() {
         const dateStr = `${this.calYear}-${String(this.calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         cells.push({
           day,
+          date: dateStr,
           isToday: dateStr === todayStr,
           items: this.calSteps.filter(s => s.date === dateStr),
         });
       }
       while (cells.length % 7 !== 0) cells.push(null);
       return cells;
+    },
+
+    // Agenda panel: the selected day's interviews (any outcome), or — by
+    // default — the next 8 upcoming ones (today forward, still scheduled).
+    agendaItems() {
+      if (this.selectedCalDay) {
+        return [...this.calSteps.filter(s => s.date === this.selectedCalDay)]
+          .sort((a, b) => a.company_name.localeCompare(b.company_name));
+      }
+      const todayStr = new Date().toISOString().slice(0, 10);
+      return [...this.calSteps]
+        .filter(s => s.date >= todayStr)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, 8);
+    },
+    agendaDayLabel() {
+      if (!this.selectedCalDay) return '';
+      const d = new Date(this.selectedCalDay + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    },
+    fmtAgendaDate(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     },
 
     // Consecutive Mon–Sun weeks, counting back from the most recent week
